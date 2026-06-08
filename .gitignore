@@ -1,0 +1,28 @@
+# Virtual Environment
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Playwright
+playwright-report/
+
+# Logs
+reports/*.log
+
+# Screenshots
+screenshots/*.png
+
+# Videos
+videos/*.webm
+
+# Traces
+reports/*.zip
+
+# IDE
+.idea/
+
+# Environment Variables
+.env
