@@ -9,7 +9,7 @@ class BrowserManager:
         playwright = sync_playwright().start()
 
         browser = playwright.chromium.launch(
-            headless=False
+            headless=True
         )
 
         page = browser.new_page()

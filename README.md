@@ -1,24 +1,27 @@
 # Playwright BDD Automation Framework
 
-A production-ready UI Automation Framework built using Python, Playwright, and Behave (BDD).
+A UI Automation Framework built using **Python, Playwright, Behave (BDD), and Allure Reporting**.
+
+The framework follows the **Page Object Model (POM)** design pattern and supports logging, screenshots, video recording, and test reporting.
 
 ---
 
-## Tech Stack
+# Tech Stack
 
-* Python
-* Playwright
-* Behave (BDD)
-* Page Object Model (POM)
-* Logging
-* Screenshots
-* Video Recording
-* Trace Viewer
-* CI/CD (GitHub Actions)
+- Python
+- Playwright
+- Behave (BDD)
+- Allure Reporting
+- Page Object Model (POM)
+- Logging
+- Screenshots
+- Video Recording
+- Trace Viewer
+- CI/CD (GitHub Actions)
 
 ---
 
-## Project Structure
+# Project Structure
 
 ```text
 playwright-bdd-framework
@@ -26,6 +29,7 @@ playwright-bdd-framework
 ├── features
 │   ├── login.feature
 │   ├── environment.py
+│   │
 │   └── steps
 │       └── login_steps.py
 │
@@ -49,6 +53,9 @@ playwright-bdd-framework
 │   └── screenshot.py
 │
 ├── reports
+│   ├── allure-results
+│   ├── allure-report
+│   └── logs
 │
 ├── screenshots
 │
@@ -63,47 +70,53 @@ playwright-bdd-framework
 
 ---
 
-## Installation
+# Installation
 
-### Clone Repository
+## Clone Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/sicvinay/playwright-bdd-framework.git
 ```
 
-### Navigate to Project
+## Navigate to Project
 
 ```bash
 cd playwright-bdd-framework
 ```
 
-### Create Virtual Environment
+## Create Virtual Environment
 
 ```bash
-python -m venv venv
+python -m venv .venv
 ```
 
-### Activate Virtual Environment
+## Activate Virtual Environment
 
-#### Windows
+### Windows PowerShell
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+### Windows Command Prompt
+
+```cmd
+.venv\Scripts\activate
+```
+
+### Linux / Mac
 
 ```bash
-venv\Scripts\activate
+source .venv/bin/activate
 ```
 
-#### Linux / Mac
-
-```bash
-source venv/bin/activate
-```
-
-### Install Dependencies
+## Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Install Playwright Browsers
+## Install Playwright Browsers
 
 ```bash
 playwright install
@@ -111,92 +124,215 @@ playwright install
 
 ---
 
-## Execute Tests
+# Environment Configuration
 
-Run all tests:
+Create a `.env` file inside the `config` folder.
+
+Example:
+
+```text
+BASE_URL=https://www.saucedemo.com
+
+USERNAME=standard_user
+PASSWORD=secret_sauce
+```
+
+The `.env` file should not be committed to GitHub.
+
+---
+
+# Test Execution
+
+## Run All Tests
 
 ```bash
 behave
 ```
 
-Run a specific feature:
+## Run a Specific Feature
 
 ```bash
 behave features/login.feature
 ```
 
----
+## Run Tests Using Tags
 
-## Framework Features
+Run smoke tests:
 
-### BDD Automation
+```bash
+behave --tags=@smoke
+```
 
-* Gherkin Feature Files
-* Given / When / Then implementation
-* Readable business scenarios
+Run negative tests:
 
-### Playwright Automation
+```bash
+behave --tags=@negative
+```
 
-* Chromium Browser Support
-* Auto Wait Mechanism
-* Fast Execution
+Run login tests:
 
-### Page Object Model
-
-* Separation of Locators
-* Reusable Page Classes
-* Easy Maintenance
-
-### Logging
-
-* Scenario Start and End Logs
-* Action-Level Logging
-* File and Console Logging
-
-### Screenshot Capture
-
-* Failure Screenshots
-* Timestamped Files
-
-### Video Recording
-
-* Playwright Video Capture
-* Stored for Failed Executions
-
-### Reporting
-
-* HTML Reports
-* Allure Reports (Future Enhancement)
-
-### CI/CD Ready
-
-* GitHub Actions Integration
-* Automated Test Execution
+```bash
+behave --tags=@login
+```
 
 ---
 
-## Test Application
+# Allure Reporting
+
+The framework uses `allure-behave` to generate Allure test results.
+
+## Generate Allure Results
+
+```bash
+behave -f allure_behave.formatter:AllureFormatter -o reports/allure-results
+```
+
+## Open Allure Report
+
+```bash
+allure serve reports/allure-results
+```
+
+## Generate a Permanent Allure HTML Report
+
+```bash
+allure generate reports/allure-results -o reports/allure-report --clean
+```
+
+## Open Generated Report
+
+```bash
+allure open reports/allure-report
+```
+
+> Note: The Allure Commandline must be installed separately and available in the system PATH.
+
+---
+
+# Framework Features
+
+## BDD Automation
+
+- Gherkin Feature Files
+- Given / When / Then implementation
+- Scenario Outlines
+- Examples for data-driven testing
+- Tags for test categorization
+- Readable business scenarios
+
+---
+
+## Playwright Automation
+
+- Chromium browser automation
+- Playwright auto-wait mechanism
+- Dynamic waits
+- Browser context isolation
+- Fast execution
+
+---
+
+## Page Object Model
+
+- Separation of page logic
+- Reusable page classes
+- Centralized locators
+- Improved maintainability
+
+---
+
+## Logging
+
+The framework supports:
+
+- Scenario start logging
+- Scenario completion logging
+- Action-level logging
+- Console logging
+- File logging
+
+Execution logs are stored under:
+
+```text
+reports/logs/
+```
+
+---
+
+## Screenshots
+
+The framework is being configured to capture screenshots for:
+
+- Passed scenarios
+- Failed scenarios
+
+Screenshots will be attached to the Allure report.
+
+---
+
+## Video Recording
+
+The framework is being configured to record Playwright execution videos for:
+
+- Passed scenarios
+- Failed scenarios
+
+Videos will be attached to the Allure report.
+
+---
+
+## Allure Report Artifacts
+
+The target Allure report will contain:
+
+```text
+Scenario
+│
+├── Execution Status
+│
+├── Test Steps
+│
+├── Execution Logs
+│
+├── Screenshot
+│
+├── Video Recording
+│
+└── Failure Details
+```
+
+---
+
+# Test Application
+
+The current framework uses SauceDemo as the practice application.
 
 SauceDemo
 
-https://www.saucedemo.com
+:contentReference[oaicite:0]{index=0}
 
 ---
 
-## Future Enhancements
+# Future Enhancements
 
-* Data Driven Testing
-* Cross Browser Execution
-* Parallel Execution
-* Allure Reporting
-* GitHub Actions Pipeline
-* Jenkins Integration
-* Docker Support
+- Cross-browser execution
+- Parallel execution
+- Playwright Trace Viewer integration
+- GitHub Actions pipeline
+- Jenkins integration
+- Docker support
+- Test data management
+- API automation integration
+- Database validation
+- Retry mechanism for flaky tests
+- Environment configuration for DEV / QA / PROD
 
 ---
 
-## Author
+# Author
 
 Vinay B S
+
 QA Automation Engineer
-Python | Playwright | API Testing | BDD
+
+**Python | Playwright | Behave | API Testing | BDD | Test Automation**
