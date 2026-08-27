@@ -13,6 +13,7 @@ Feature: Login Functionality
       | standard_user           | secret_sauce |
       | problem_user            | secret_sauce |
       | performance_glitch_user | secret_sauce |
+      | bharadwaj               | bharadwaj    |
 
 
   @negative @login
