@@ -12,6 +12,16 @@ class BrowserManager:
             headless=True
         )
 
-        page = browser.new_page()
+        context = browser.new_context(
+            record_video_dir="reports/videos"
+        )
 
-        return playwright, browser, page
+        context.tracing.start(
+            screenshots=True,
+            snapshots=True,
+            sources=True
+        )
+
+        page = context.new_page()
+
+        return playwright, browser, context, page
