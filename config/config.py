@@ -3,38 +3,23 @@ from pathlib import Path
 import os
 
 
-# ==========================================
-# Environment Configuration
-# ==========================================
-
+# Load local environment variables from config/.env
 env_path = Path(__file__).parent / ".env"
 
-load_dotenv(
-    dotenv_path=env_path
-)
+load_dotenv(dotenv_path=env_path)
 
 
-BASE_URL = os.getenv(
-    "BASE_URL"
-)
-
-APP_USERNAME = os.getenv(
-    "USERNAME"
-)
-
-APP_PASSWORD = os.getenv(
-    "PASSWORD"
-)
+# Application configuration
+BASE_URL = os.getenv("BASE_URL")
+APP_USERNAME = os.getenv("USERNAME")
+APP_PASSWORD = os.getenv("PASSWORD")
 
 
-# ==========================================
-# Framework Timeout Configuration
-# ==========================================
-
+# Playwright timeout configuration
 DEFAULT_TIMEOUT_MS = 30000
-
 PAGE_LOAD_TIMEOUT_MS = 60000
 
-CUSTOM_WAIT_TIMEOUT_SECONDS = 30
 
-POLLING_INTERVAL_SECONDS = 0.5
+# Custom polling configuration
+CUSTOM_WAIT_TIMEOUT_SECONDS = 30
+POLLING_INTERVAL_SECONDS = 1

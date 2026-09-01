@@ -1,0 +1,7 @@
+2026-08-28 00:07:16,180 - INFO - Starting Scenario : Successful Login
+2026-08-28 00:07:21,998 - INFO - BASE_URL loaded = https://www.saucedemo.com
+2026-08-28 00:07:21,998 - INFO - Application credentials loaded successfully
+2026-08-28 00:07:23,280 - INFO - Entering username
+2026-08-28 00:07:23,330 - INFO - Entering password
+2026-08-28 00:07:23,362 - INFO - Clicking login button
+2026-08-28 00:07:23,494 - INFO - Validating inventory page
