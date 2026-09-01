@@ -20,6 +20,7 @@ def before_scenario(context, scenario):
     (
         context.playwright,
         context.browser,
+        context.browser_context,
         context.page
     ) = BrowserManager.launch_browser()
 
@@ -52,26 +53,39 @@ def after_scenario(context, scenario):
 
     try:
 
-        if scenario.status.name == "failed":
+        logger.info(
+            f"Scenario status: {scenario.status.name}"
+        )
 
-            logger.error(
-                f"Scenario failed: {scenario.name}"
-            )
+        # Capture screenshot for every scenario
+        logger.info(
+            "Capturing scenario screenshot"
+        )
 
-            logger.info(
-                "Capturing failure screenshot"
-            )
+        capture_screenshot(
+            context.page,
+            scenario.name
+        )
 
-            capture_screenshot(
-                context.page
-            )
+        # Stop Playwright trace
+        logger.info(
+            "Stopping Playwright trace"
+        )
 
-        else:
+        trace_name = (
+            scenario.name
+            .replace(" ", "_")
+            .replace("/", "_")
+            .replace("\\", "_")
+        )
 
-            logger.info(
-                f"Scenario completed successfully: "
-                f"{scenario.name}"
-            )
+        context.browser_context.tracing.stop(
+            path=f"reports/traces/{trace_name}.zip"
+        )
+
+        logger.info(
+            f"Trace saved: {trace_name}.zip"
+        )
 
     finally:
 
