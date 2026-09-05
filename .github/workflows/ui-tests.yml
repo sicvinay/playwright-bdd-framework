@@ -43,3 +43,12 @@ jobs:
       - name: Run Behave tests
         run: |
           behave
+
+      - name: Upload test artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-automation-test-results
+          path: reports/
+          retention-days: 14
+          if-no-files-found: warn
