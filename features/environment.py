@@ -1,3 +1,5 @@
+import os
+
 from config.config import (
     DEFAULT_TIMEOUT_MS,
     PAGE_LOAD_TIMEOUT_MS
@@ -6,6 +8,11 @@ from config.config import (
 from utils.browser_manager import BrowserManager
 from utils.logger import get_logger
 from utils.screenshot import capture_screenshot
+from utils.allure_utils import (
+    attach_screenshot,
+    attach_video,
+    attach_trace
+)
 
 
 logger = get_logger()
@@ -53,39 +60,113 @@ def after_scenario(context, scenario):
 
     try:
 
-        logger.info(
-            f"Scenario status: {scenario.status.name}"
-        )
-
-        # Capture screenshot for every scenario
-        logger.info(
-            "Capturing scenario screenshot"
-        )
-
-        capture_screenshot(
-            context.page,
-            scenario.name
-        )
-
-        # Stop Playwright trace
-        logger.info(
-            "Stopping Playwright trace"
-        )
-
-        trace_name = (
+        scenario_name = (
             scenario.name
             .replace(" ", "_")
             .replace("/", "_")
             .replace("\\", "_")
         )
 
-        context.browser_context.tracing.stop(
-            path=f"reports/traces/{trace_name}.zip"
+        logger.info(
+            f"Scenario status: {scenario.status.name}"
+        )
+
+        # -------------------------------------------------
+        # 1. Capture screenshot
+        # -------------------------------------------------
+
+        logger.info(
+            "Capturing scenario screenshot"
+        )
+
+        screenshot_path = capture_screenshot(
+            context.page,
+            scenario.name
+        )
+
+        if screenshot_path and os.path.exists(
+            screenshot_path
+        ):
+
+            attach_screenshot(
+                screenshot_path,
+                name=f"{scenario_name}_screenshot"
+            )
+
+        # -------------------------------------------------
+        # 2. Stop Playwright trace
+        # -------------------------------------------------
+
+        trace_path = (
+            f"reports/traces/{scenario_name}.zip"
         )
 
         logger.info(
-            f"Trace saved: {trace_name}.zip"
+            "Stopping Playwright trace"
         )
+
+        context.browser_context.tracing.stop(
+            path=trace_path
+        )
+
+        if os.path.exists(trace_path):
+
+            attach_trace(
+                trace_path,
+                name=f"{scenario_name}_trace"
+            )
+
+        # -------------------------------------------------
+        # 3. Get video path
+        # -------------------------------------------------
+
+        video_path = None
+
+        if context.page.video:
+
+            logger.info(
+                "Finalizing Playwright video"
+            )
+
+            video_path = context.page.video.path()
+
+        # -------------------------------------------------
+        # 4. Close browser context
+        # -------------------------------------------------
+
+        logger.info(
+            "Closing browser context"
+        )
+
+        context.browser_context.close()
+
+        # -------------------------------------------------
+        # 5. Attach video after context closes
+        # -------------------------------------------------
+
+        if video_path and os.path.exists(video_path):
+
+            attach_video(
+                video_path,
+                name=f"{scenario_name}_video"
+            )
+
+        # -------------------------------------------------
+        # 6. Log scenario result
+        # -------------------------------------------------
+
+        if scenario.status.name == "failed":
+
+            logger.error(
+                f"Scenario failed: {scenario.name}"
+            )
+
+        else:
+
+            logger.info(
+                f"Scenario completed successfully: "
+                f"{scenario.name}"
+            )
 
     finally:
 
@@ -93,10 +174,14 @@ def after_scenario(context, scenario):
             "Closing browser"
         )
 
-        context.browser.close()
+        if context.browser:
+
+            context.browser.close()
 
         logger.info(
             "Stopping Playwright"
         )
 
-        context.playwright.stop()
+        if context.playwright:
+
+            context.playwright.stop()

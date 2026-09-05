@@ -29,3 +29,5 @@ def capture_screenshot(page, scenario_name):
         path=screenshot_path,
         full_page=True
     )
+
+    return screenshot_path

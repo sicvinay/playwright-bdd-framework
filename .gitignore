@@ -14,13 +14,14 @@ __pycache__/
 screenshots/
 videos/
 traces/
-x
+
 # Reports
 reports/logs/
 reports/screenshots/
 reports/videos/
 reports/traces/
 reports/allure-results/
+reports/allure-report/
 
 # IDE
 .idea/
