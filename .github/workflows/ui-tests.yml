@@ -52,3 +52,31 @@ jobs:
           path: reports/
           retention-days: 14
           if-no-files-found: warn
+
+      - name: Send Slack notification
+        if: ${{ always() }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$STATUS" = "success" ]; then
+            EMOJI="🟢"
+            MESSAGE="UI Automation Tests Passed"
+          else
+            EMOJI="🔴"
+            MESSAGE="UI Automation Tests Failed"
+          fi
+
+          payload=$(jq -n \
+            --arg text "$EMOJI $MESSAGE\nRepository: $REPOSITORY\nBranch: $BRANCH\nWorkflow: $WORKFLOW\nRun: #$RUN_NUMBER\nRun URL: $RUN_URL" \
+            '{text: $text}')
+
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            --data "$payload" \
+            "$SLACK_WEBHOOK_URL"
