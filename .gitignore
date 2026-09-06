@@ -20,7 +20,9 @@ reports/logs/
 reports/screenshots/
 reports/videos/
 reports/traces/
+reports/junit/
 reports/allure-results/
+reports/allure-report/
 
 # IDE
 .idea/

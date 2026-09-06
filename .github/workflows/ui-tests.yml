@@ -42,7 +42,8 @@ jobs:
 
       - name: Run Behave tests
         run: |
-          behave
+          mkdir -p reports/junit
+          behave --junit --junit-directory reports/junit
 
       - name: Upload test artifacts
         if: ${{ !cancelled() }}
