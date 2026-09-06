@@ -45,6 +45,11 @@ jobs:
           mkdir -p reports/junit
           behave --junit --junit-directory reports/junit
 
+      - name: Generate test summary
+        if: ${{ always() }}
+        run: |
+          python utils/ci_summary.py > reports/junit/summary.json
+
       - name: Upload test artifacts
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
