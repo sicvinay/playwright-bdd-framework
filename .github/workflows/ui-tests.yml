@@ -12,7 +12,7 @@ on:
 jobs:
   ui-tests:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     timeout-minutes: 30
 
@@ -42,7 +42,8 @@ jobs:
 
       - name: Run Behave tests
         run: |
-          behave
+          mkdir -p reports/allure-results
+          behave -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
 
       - name: Upload test artifacts
         if: ${{ !cancelled() }}
@@ -75,6 +76,11 @@ jobs:
           payload=$(jq -n \
             --arg text "$EMOJI $MESSAGE\nRepository: $REPOSITORY\nBranch: $BRANCH\nWorkflow: $WORKFLOW\nRun: #$RUN_NUMBER\nRun URL: $RUN_URL" \
             '{text: $text}')
+
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "Slack webhook not configured; skipping notification."
+            exit 0
+          fi
 
           curl -X POST \
             -H "Content-Type: application/json" \
