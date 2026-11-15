@@ -34,5 +34,5 @@ Feature: Shopping journey
   Scenario: Checkout requires first name
     When the customer adds "Sauce Labs Backpack" to the cart
     And the customer starts checkout
-    And the customer enters checkout details "" "Customer" "560001"
+    And the customer submits checkout with an empty first name
     Then checkout should display "Error: First Name is required"
