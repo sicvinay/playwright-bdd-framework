@@ -42,7 +42,8 @@ jobs:
 
       - name: Run Behave tests
         run: |
-          behave -f pretty -f allure_behave.formatter:AllureFormatter -o reports/allure-results
+          mkdir -p reports/allure-results
+          behave -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
 
       - name: Upload test artifacts
         if: ${{ !cancelled() }}
