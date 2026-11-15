@@ -17,7 +17,9 @@ def login_customer(context):
 
 @then("the inventory should contain {count:d} products")
 def verify_inventory_count(context, count):
-    assert context.page.locator("[data-test='inventory-item']").count() == count
+    context.page.locator(".inventory_list").wait_for(state="visible", timeout=15000)
+    actual = context.page.locator(".inventory_item").count()
+    assert actual == count, f"Expected {count} inventory items, found {actual}; URL={context.page.url}"
 
 
 @when("the customer sorts products by price low to high")
@@ -84,3 +86,8 @@ def verify_confirmation(context, message):
 @then('checkout should display "{message}"')
 def verify_checkout_error(context, message):
     assert CheckoutPage(context.page).error_message() == message
+
+
+@when("the customer submits checkout with an empty first name")
+def submit_without_first_name(context):
+    CheckoutPage(context.page).enter_customer_information("", "Customer", "560001")
