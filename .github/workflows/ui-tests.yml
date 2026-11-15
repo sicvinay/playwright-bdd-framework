@@ -42,7 +42,7 @@ jobs:
 
       - name: Run Behave tests
         run: |
-          behave
+          behave -f pretty -f allure_behave.formatter:AllureFormatter -o reports/allure-results
 
       - name: Upload test artifacts
         if: ${{ !cancelled() }}
@@ -75,6 +75,11 @@ jobs:
           payload=$(jq -n \
             --arg text "$EMOJI $MESSAGE\nRepository: $REPOSITORY\nBranch: $BRANCH\nWorkflow: $WORKFLOW\nRun: #$RUN_NUMBER\nRun URL: $RUN_URL" \
             '{text: $text}')
+
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "Slack webhook not configured; skipping notification."
+            exit 0
+          fi
 
           curl -X POST \
             -H "Content-Type: application/json" \
