@@ -6,23 +6,23 @@ Feature: Shopping journey
   Background:
     Given a standard customer is logged in
 
-  @smoke @inventory
+  @smoke @sanity @regression @inventory
   Scenario: Inventory is displayed after login
     Then the inventory should contain 6 products
 
-  @inventory
+  @regression @inventory
   Scenario: Sort products by price from low to high
     When the customer sorts products by price low to high
     Then inventory prices should be in ascending order
 
-  @cart
+  @sanity @regression @cart
   Scenario: Add and remove an item from cart
     When the customer adds "Sauce Labs Backpack" to the cart
     Then the cart should contain "Sauce Labs Backpack"
     When the customer removes "Sauce Labs Backpack" from the cart
     Then the cart should not contain "Sauce Labs Backpack"
 
-  @smoke @checkout
+  @smoke @regression @checkout
   Scenario: Complete checkout successfully
     When the customer adds "Sauce Labs Backpack" to the cart
     And the customer starts checkout
@@ -30,7 +30,7 @@ Feature: Shopping journey
     And the customer finishes checkout
     Then the order confirmation should be "Thank you for your order!"
 
-  @negative @checkout
+  @negative @regression @checkout
   Scenario: Checkout requires first name
     When the customer adds "Sauce Labs Backpack" to the cart
     And the customer starts checkout
