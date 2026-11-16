@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+from uuid import uuid4
 
 from config.config import DEFAULT_TIMEOUT_MS, PAGE_LOAD_TIMEOUT_MS
 from utils.browser_manager import BrowserManager
@@ -23,6 +24,7 @@ def before_scenario(context, scenario):
 
 def after_scenario(context, scenario):
     safe_name = re.sub(r"[^a-zA-Z0-9_.-]+", "_", scenario.name).strip("_") or "scenario"
+    trace_name = f"{safe_name}_{uuid4().hex[:10]}.zip"
     trace_dir = Path("reports/traces")
     trace_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -32,7 +34,7 @@ def after_scenario(context, scenario):
         except Exception:
             logger.exception("Unable to capture screenshot")
         try:
-            context.browser_context.tracing.stop(path=str(trace_dir / f"{safe_name}.zip"))
+            context.browser_context.tracing.stop(path=str(trace_dir / trace_name))
         except Exception:
             logger.exception("Unable to save Playwright trace")
     finally:

@@ -100,14 +100,31 @@ jobs:
           echo "Selected suite: $SUITE"
 
       - name: Run Behave tests
+        id: behave_tests
         shell: bash
         run: |
           mkdir -p reports/allure-results
+          printf 'Target: %s\nSuite: %s\nBranch: %s\nRun: %s\n' "$TARGET_ENV" "$TEST_SUITE" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" > reports/run-metadata.txt
           if [[ "$TEST_SUITE" == "all" ]]; then
             behave -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
           else
             behave --tags="@$TEST_SUITE" -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
           fi
+
+      - name: Add execution summary
+        if: ${{ always() }}
+        shell: bash
+        env:
+          TEST_OUTCOME: ${{ steps.behave_tests.outcome }}
+        run: |
+          {
+            echo '## UI automation execution'
+            echo "- Environment: ${TARGET_ENV:-not resolved}"
+            echo "- Suite: ${TEST_SUITE:-not selected}"
+            echo "- Behave outcome: ${TEST_OUTCOME}"
+            echo '- Artifacts: screenshots, videos, traces, logs and Allure results (when generated)'
+            echo '- Retention: 14 days'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test artifacts
         if: ${{ !cancelled() }}
