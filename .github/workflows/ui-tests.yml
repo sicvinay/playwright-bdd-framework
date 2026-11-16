@@ -47,8 +47,8 @@ jobs:
       QA_BASE_URL: https://www.saucedemo.com
       DEV_BASE_URL: ${{ vars.DEV_BASE_URL }}
       STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL }}
-      USERNAME: ${{ secrets.SAUCE_USERNAME }}
-      PASSWORD: ${{ secrets.SAUCE_PASSWORD }}
+      APP_USERNAME: ${{ secrets.SAUCE_USERNAME }}
+      APP_PASSWORD: ${{ secrets.SAUCE_PASSWORD }}
 
     steps:
 
@@ -113,6 +113,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p reports/allure-results
+          printf 'Environment=%s\nBase URL=%s\nTest suite=%s\n' "$TARGET_ENV" "$BASE_URL" "$TEST_SUITE" > reports/allure-results/environment.properties
           printf 'Target: %s\nSuite: %s\nBranch: %s\nRun: %s\n' "$TARGET_ENV" "$TEST_SUITE" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" > reports/run-metadata.txt
           if [[ "$TEST_SUITE" == "all" ]]; then
             behave -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
