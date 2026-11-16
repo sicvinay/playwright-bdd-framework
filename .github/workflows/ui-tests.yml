@@ -4,10 +4,14 @@ on:
   push:
     branches:
       - main
+      - 'feature/**'
+      - 'bugfix/**'
 
   pull_request:
     branches:
       - main
+
+  workflow_dispatch:
 
 jobs:
   ui-tests:
