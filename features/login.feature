@@ -1,7 +1,7 @@
 Feature: Login Functionality
 
 
-  @smoke @login
+  @smoke @regression @login
   Scenario Outline: Successful login with valid users
 
     Given user launches the application
@@ -15,7 +15,7 @@ Feature: Login Functionality
       | performance_glitch_user | secret_sauce |
 
 
-  @negative @login
+  @negative @regression @login
   Scenario Outline: Unsuccessful login with invalid credentials
 
     Given user launches the application
@@ -28,7 +28,7 @@ Feature: Login Functionality
       | standard_user | wrong_pass   | Epic sadface: Username and password do not match any user in this service |
 
 
-  @negative @login
+  @negative @regression @login
   Scenario Outline: Login with empty username
 
     Given user launches the application
@@ -40,7 +40,7 @@ Feature: Login Functionality
       | secret_sauce | Epic sadface: Username is required |
 
 
-  @negative @login
+  @negative @regression @login
   Scenario Outline: Login with empty password
 
     Given user launches the application
@@ -52,7 +52,7 @@ Feature: Login Functionality
       | standard_user | Epic sadface: Password is required |
 
 
-  @negative @login
+  @negative @regression @login
   Scenario: Login with a locked account
 
     Given user launches the application
