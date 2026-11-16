@@ -133,11 +133,14 @@ Example:
 ```text
 BASE_URL=https://www.saucedemo.com
 
-USERNAME=standard_user
-PASSWORD=secret_sauce
+TARGET_ENV=qa
+APP_USERNAME=standard_user
+APP_PASSWORD=secret_sauce
 ```
 
-The `.env` file should not be committed to GitHub.
+The `.env` file should not be committed to GitHub. `TARGET_ENV` supports `qa`, `dev`, and `staging`. QA defaults to SauceDemo; DEV and STAGING require a real `BASE_URL` for the deployed application. `APP_USERNAME` and `APP_PASSWORD` are preferred; legacy `USERNAME` and `PASSWORD` remain supported for local compatibility.
+
+For GitHub Actions, configure repository secrets `SAUCE_USERNAME` and `SAUCE_PASSWORD` under **Settings → Secrets and variables → Actions**. Configure repository variables `DEV_BASE_URL` and `STAGING_BASE_URL` only after real deployments exist. Never commit credentials or put them in the URL. Workflow reports include environment and base URL metadata but never passwords.
 
 ---
 
