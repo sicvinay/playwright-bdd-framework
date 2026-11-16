@@ -59,14 +59,17 @@ jobs:
       fail-fast: false
       matrix:
         browser: ${{ fromJSON(inputs.browser == 'all' && '["chromium","firefox","webkit"]' || format('["{0}"]', inputs.browser || 'chromium')) }}
+        shard: [0, 1]
 
     concurrency:
-      group: ui-tests-${{ github.workflow }}-${{ github.event_name == 'schedule' && 'scheduled-regression' || github.ref }}
+      group: ui-tests-${{ github.workflow }}-${{ github.event_name == 'schedule' && 'scheduled-regression' || github.ref }}-${{ matrix.browser }}-${{ matrix.shard }}
       cancel-in-progress: false
 
     env:
       TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
       BROWSER: ${{ matrix.browser }}
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_COUNT: 2
       REQUESTED_SUITE: ${{ inputs.test_suite || 'auto' }}
       QA_BASE_URL: https://www.saucedemo.com
       DEV_BASE_URL: ${{ vars.DEV_BASE_URL }}
@@ -151,12 +154,24 @@ jobs:
         shell: bash
         run: |
           mkdir -p reports/allure-results
-          printf 'Environment=%s\nBase URL=%s\nTest suite=%s\nBrowser=%s\n' "$TARGET_ENV" "$BASE_URL" "$TEST_SUITE" "$BROWSER" > reports/allure-results/environment.properties
-          printf 'Target: %s\nSuite: %s\nBrowser: %s\nBranch: %s\nRun: %s\n' "$TARGET_ENV" "$TEST_SUITE" "$BROWSER" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" > reports/run-metadata.txt
+          printf 'Environment=%s\nBase URL=%s\nTest suite=%s\nBrowser=%s\nShard=%s/%s\n' "$TARGET_ENV" "$BASE_URL" "$TEST_SUITE" "$BROWSER" "$SHARD_INDEX" "$SHARD_COUNT" > reports/allure-results/environment.properties
+          printf 'Target: %s\nSuite: %s\nBrowser: %s\nShard: %s/%s\nBranch: %s\nRun: %s\n' "$TARGET_ENV" "$TEST_SUITE" "$BROWSER" "$SHARD_INDEX" "$SHARD_COUNT" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" > reports/run-metadata.txt
+          mapfile -t FEATURES < <(find features -maxdepth 1 -type f -name '*.feature' | sort)
+          SELECTED=()
+          for i in "${!FEATURES[@]}"; do
+            if (( i % SHARD_COUNT == SHARD_INDEX )); then
+              SELECTED+=("${FEATURES[i]}")
+            fi
+          done
+          if (( ${#SELECTED[@]} == 0 )); then
+            echo "No feature files assigned to shard $SHARD_INDEX; nothing to execute."
+            exit 0
+          fi
+          printf 'Shard %s/%s executes: %s\\n' "$SHARD_INDEX" "$SHARD_COUNT" "${SELECTED[*]}"
           if [[ "$TEST_SUITE" == "all" ]]; then
-            behave -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
+            behave "${SELECTED[@]}" -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
           else
-            behave --tags="@$TEST_SUITE" -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
+            behave "${SELECTED[@]}" --tags="@$TEST_SUITE" -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
           fi
 
       - name: Generate Allure HTML report
@@ -180,6 +195,7 @@ jobs:
             echo "- Environment: ${TARGET_ENV:-not resolved}"
             echo "- Suite: ${TEST_SUITE:-not selected}"
             echo "- Browser: ${BROWSER:-not selected}"
+            echo "- Shard: ${SHARD_INDEX:-unknown}/${SHARD_COUNT:-unknown}"
             echo "- Behave outcome: ${TEST_OUTCOME}"
             echo '- Artifacts: screenshots, videos, traces, logs, Allure results and HTML report (when generated)'
             echo '- Retention: 14 days'
@@ -189,7 +205,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ui-automation-test-results-${{ matrix.browser }}
+          name: ui-automation-test-results-${{ matrix.browser }}-shard-${{ matrix.shard }}
           path: reports/
           retention-days: 14
           if-no-files-found: warn

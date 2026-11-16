@@ -181,6 +181,14 @@ behave --tags=@login
 
 ---
 
+# Parallel Behave Execution in CI
+
+GitHub Actions distributes the top-level `.feature` files across **two parallel shards** using a deterministic sorted round-robin assignment. Each shard runs in a separate runner and produces its own Allure report, screenshots, videos, traces, and logs. Existing cross-browser `browser=all` expands to **six jobs** (3 browser engines × 2 shards). Daily 07:00 IST regression uses two Chromium shards.
+
+This is **feature-file-level parallelism**, not scenario-level parallelism: scenarios inside one feature still run sequentially. Shard durations can differ if feature files have unequal numbers of scenarios. The current two-feature suite gives one feature to each shard. The workflow avoids simultaneous writes to shared report directories by using isolated runners and unique artifact names. Do not expect a single combined Allure dashboard yet; each shard has its own report. No additional Python parallel-runner package is required.
+
+---
+
 # Cross-Browser Testing
 
 The framework supports `BROWSER=chromium` (default), `BROWSER=firefox`, and `BROWSER=webkit`. Install all engines locally using `python -m playwright install chromium firefox webkit`. In PowerShell, select an engine with `$env:BROWSER="firefox"; behave --tags=@smoke` (replace firefox with chromium or webkit).
