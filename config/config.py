@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from pathlib import Path
+from urllib.parse import urlparse
 import os
 
 
@@ -16,10 +17,13 @@ if TARGET_ENV not in {"dev", "qa", "staging"}:
 
 # QA uses SauceDemo; other environments must supply a real deployed URL.
 BASE_URL = os.getenv("BASE_URL") or ("https://www.saucedemo.com" if TARGET_ENV == "qa" else None)
-if not BASE_URL or not BASE_URL.startswith(("http://", "https://")):
+if not BASE_URL:
     raise ValueError(f"BASE_URL must be configured for environment {TARGET_ENV}")
-APP_USERNAME = os.getenv("USERNAME")
-APP_PASSWORD = os.getenv("PASSWORD")
+parsed_url = urlparse(BASE_URL)
+if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname or parsed_url.username or parsed_url.password:
+    raise ValueError(f"BASE_URL must be a valid HTTP(S) URL without embedded credentials for {TARGET_ENV}")
+APP_USERNAME = os.getenv("APP_USERNAME") or os.getenv("USERNAME")
+APP_PASSWORD = os.getenv("APP_PASSWORD") or os.getenv("PASSWORD")
 
 
 # Playwright timeout configuration
