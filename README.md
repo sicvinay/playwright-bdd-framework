@@ -136,6 +136,7 @@ BASE_URL=https://www.saucedemo.com
 TARGET_ENV=qa
 APP_USERNAME=standard_user
 APP_PASSWORD=secret_sauce
+BROWSER=chromium
 ```
 
 The `.env` file should not be committed to GitHub. `TARGET_ENV` supports `qa`, `dev`, and `staging`. QA defaults to SauceDemo; DEV and STAGING require a real `BASE_URL` for the deployed application. `APP_USERNAME` and `APP_PASSWORD` are preferred; legacy `USERNAME` and `PASSWORD` remain supported for local compatibility.
@@ -177,6 +178,14 @@ Run login tests:
 ```bash
 behave --tags=@login
 ```
+
+---
+
+# Cross-Browser Testing
+
+The framework supports `BROWSER=chromium` (default), `BROWSER=firefox`, and `BROWSER=webkit`. Install all engines locally using `python -m playwright install chromium firefox webkit`. In PowerShell, select an engine with `$env:BROWSER="firefox"; behave --tags=@smoke` (replace firefox with chromium or webkit).
+
+For GitHub Actions, choose **Actions → UI Automation Tests → Run workflow**, select `browser=all` to run three separate browser jobs, and select the desired suite/environment. Each job publishes its own Allure and evidence artifact named `ui-automation-test-results-<browser>`. Pull requests, pushes, and daily 07:00 IST scheduled regression runs continue using Chromium by default. WebKit is Playwright's Safari engine, not the Safari desktop browser.
 
 ---
 

@@ -26,6 +26,12 @@ APP_USERNAME = os.getenv("APP_USERNAME") or os.getenv("USERNAME")
 APP_PASSWORD = os.getenv("APP_PASSWORD") or os.getenv("PASSWORD")
 
 
+# Supported Playwright browser engines
+BROWSER = os.getenv("BROWSER", "chromium").strip().lower()
+if BROWSER not in {"chromium", "firefox", "webkit"}:
+    raise ValueError(f"Unsupported BROWSER: {BROWSER}. Use chromium, firefox, or webkit.")
+
+
 # Playwright timeout configuration
 DEFAULT_TIMEOUT_MS = 30000
 PAGE_LOAD_TIMEOUT_MS = 60000
