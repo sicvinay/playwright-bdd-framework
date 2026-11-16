@@ -1,31 +1,12 @@
-import os
-from datetime import datetime
+import re
+from pathlib import Path
+from uuid import uuid4
 
 
 def capture_screenshot(page, scenario_name):
-
-    os.makedirs(
-        "reports/screenshots",
-        exist_ok=True
-    )
-
-    timestamp = datetime.now().strftime(
-        "%Y%m%d_%H%M%S"
-    )
-
-    safe_name = (
-        scenario_name
-        .replace(" ", "_")
-        .replace("/", "_")
-        .replace("\\", "_")
-    )
-
-    screenshot_path = (
-        f"reports/screenshots/"
-        f"{safe_name}_{timestamp}.png"
-    )
-
-    page.screenshot(
-        path=screenshot_path,
-        full_page=True
-    )
+    screenshot_dir = Path("reports/screenshots")
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]+", "_", scenario_name).strip("_") or "scenario"
+    screenshot_path = screenshot_dir / f"{safe_name}_{uuid4().hex[:12]}.png"
+    page.screenshot(path=str(screenshot_path), full_page=True)
+    return screenshot_path
