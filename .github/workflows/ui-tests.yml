@@ -65,6 +65,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Setup Java for Allure CLI
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Allure CLI
+        run: npm install --global allure-commandline@2.34.1
+
       - name: Install Playwright browsers
         run: |
           python -m playwright install --with-deps chromium
@@ -111,6 +120,16 @@ jobs:
             behave --tags="@$TEST_SUITE" -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
           fi
 
+      - name: Generate Allure HTML report
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -d reports/allure-results ]] && compgen -G 'reports/allure-results/*-result.json' > /dev/null; then
+            allure generate reports/allure-results --clean -o reports/allure-report
+          else
+            echo "No Allure scenario results available; skipping HTML generation."
+          fi
+
       - name: Add execution summary
         if: ${{ always() }}
         shell: bash
@@ -122,7 +141,7 @@ jobs:
             echo "- Environment: ${TARGET_ENV:-not resolved}"
             echo "- Suite: ${TEST_SUITE:-not selected}"
             echo "- Behave outcome: ${TEST_OUTCOME}"
-            echo '- Artifacts: screenshots, videos, traces, logs and Allure results (when generated)'
+            echo '- Artifacts: screenshots, videos, traces, logs, Allure results and HTML report (when generated)'
             echo '- Retention: 14 days'
           } >> "$GITHUB_STEP_SUMMARY"
 
