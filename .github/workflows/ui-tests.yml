@@ -47,8 +47,12 @@ jobs:
       QA_BASE_URL: https://www.saucedemo.com
       DEV_BASE_URL: ${{ vars.DEV_BASE_URL }}
       STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL }}
-      APP_USERNAME: ${{ secrets.SAUCE_USERNAME }}
-      APP_PASSWORD: ${{ secrets.SAUCE_PASSWORD }}
+      QA_USERNAME: ${{ secrets.SAUCE_USERNAME }}
+      QA_PASSWORD: ${{ secrets.SAUCE_PASSWORD }}
+      DEV_USERNAME: ${{ secrets.DEV_APP_USERNAME }}
+      DEV_PASSWORD: ${{ secrets.DEV_APP_PASSWORD }}
+      STAGING_USERNAME: ${{ secrets.STAGING_APP_USERNAME }}
+      STAGING_PASSWORD: ${{ secrets.STAGING_APP_PASSWORD }}
 
     steps:
 
@@ -82,16 +86,24 @@ jobs:
         shell: bash
         run: |
           case "$TARGET_ENV" in
-            qa) BASE_URL="$QA_BASE_URL" ;;
-            dev) BASE_URL="$DEV_BASE_URL" ;;
-            staging) BASE_URL="$STAGING_BASE_URL" ;;
+            qa) BASE_URL="$QA_BASE_URL"; APP_USERNAME="$QA_USERNAME"; APP_PASSWORD="$QA_PASSWORD" ;;
+            dev) BASE_URL="$DEV_BASE_URL"; APP_USERNAME="$DEV_USERNAME"; APP_PASSWORD="$DEV_PASSWORD" ;;
+            staging) BASE_URL="$STAGING_BASE_URL"; APP_USERNAME="$STAGING_USERNAME"; APP_PASSWORD="$STAGING_PASSWORD" ;;
             *) echo "Unsupported target environment: $TARGET_ENV" >&2; exit 1 ;;
           esac
           if [[ -z "$BASE_URL" || ! "$BASE_URL" =~ ^https?:// ]]; then
             echo "No valid URL configured for $TARGET_ENV. Configure the corresponding repository variable." >&2
             exit 1
           fi
+          if [[ -z "$APP_USERNAME" || -z "$APP_PASSWORD" ]]; then
+            echo "Missing application credentials for $TARGET_ENV. Configure the corresponding Actions secrets." >&2
+            exit 1
+          fi
+          echo "::add-mask::$APP_USERNAME"
+          echo "::add-mask::$APP_PASSWORD"
           echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "APP_USERNAME=$APP_USERNAME" >> "$GITHUB_ENV"
+          echo "APP_PASSWORD=$APP_PASSWORD" >> "$GITHUB_ENV"
           echo "Selected target: $TARGET_ENV"
 
       - name: Select test suite
