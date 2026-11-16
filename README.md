@@ -180,6 +180,14 @@ behave --tags=@login
 
 ---
 
+# Scheduled Regression Runs
+
+GitHub Actions runs the `@regression` suite automatically every day at **07:00 IST (01:30 UTC)** against the QA SauceDemo environment. The workflow uses `cron: '30 1 * * *'`, so the schedule is UTC-based and does not shift for daylight saving time in India. Scheduled workflows run from the default branch and GitHub may delay their start during periods of high load.
+
+You can still run tests manually via **Actions → UI Automation Tests → Run workflow**. Pull requests continue to run smoke tests; normal pushes continue to run regression tests. The workflow serializes overlapping scheduled runs, generates Allure reports and uploads test artifacts. Slack notifications require a configured `SLACK_WEBHOOK_URL` secret.
+
+---
+
 # Allure Reporting
 
 The framework uses `allure-behave` to generate Allure test results.
