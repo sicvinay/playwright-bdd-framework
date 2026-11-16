@@ -140,7 +140,7 @@ APP_PASSWORD=secret_sauce
 
 The `.env` file should not be committed to GitHub. `TARGET_ENV` supports `qa`, `dev`, and `staging`. QA defaults to SauceDemo; DEV and STAGING require a real `BASE_URL` for the deployed application. `APP_USERNAME` and `APP_PASSWORD` are preferred; legacy `USERNAME` and `PASSWORD` remain supported for local compatibility.
 
-For GitHub Actions, configure repository secrets `SAUCE_USERNAME` and `SAUCE_PASSWORD` under **Settings → Secrets and variables → Actions**. Configure repository variables `DEV_BASE_URL` and `STAGING_BASE_URL` only after real deployments exist. Never commit credentials or put them in the URL. Workflow reports include environment and base URL metadata but never passwords.
+For GitHub Actions, configure repository secrets `SAUCE_USERNAME` and `SAUCE_PASSWORD` under **Settings → Secrets and variables → Actions**. Configure repository variables `DEV_BASE_URL` and `STAGING_BASE_URL` only after real deployments exist. For DEV, configure `DEV_APP_USERNAME` and `DEV_APP_PASSWORD` as Actions secrets; for STAGING, configure `STAGING_APP_USERNAME` and `STAGING_APP_PASSWORD`. The workflow selects credentials by `TARGET_ENV` and fails early if the selected environment lacks either secret. QA continues to use `SAUCE_USERNAME` and `SAUCE_PASSWORD`. Never commit credentials or put them in the URL. Workflow reports include environment and base URL metadata but never passwords.
 
 ---
 
