@@ -13,6 +13,17 @@ on:
 
   workflow_dispatch:
     inputs:
+      test_suite:
+        description: 'Behave test suite to execute'
+        required: true
+        type: choice
+        default: regression
+        options:
+          - smoke
+          - sanity
+          - regression
+          - negative
+          - all
       target_environment:
         description: 'Environment to test (dev/staging require a configured URL)'
         required: true
@@ -32,6 +43,7 @@ jobs:
 
     env:
       TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
+      REQUESTED_SUITE: ${{ inputs.test_suite || 'auto' }}
       QA_BASE_URL: https://www.saucedemo.com
       DEV_BASE_URL: ${{ vars.DEV_BASE_URL }}
       STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL }}
@@ -73,10 +85,29 @@ jobs:
           echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
           echo "Selected target: $TARGET_ENV"
 
+      - name: Select test suite
+        shell: bash
+        run: |
+          SUITE="$REQUESTED_SUITE"
+          if [[ "$SUITE" == "auto" ]]; then
+            if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then SUITE="smoke"; else SUITE="regression"; fi
+          fi
+          case "$SUITE" in
+            smoke|sanity|regression|negative|all) ;;
+            *) echo "Unsupported test suite: $SUITE" >&2; exit 1 ;;
+          esac
+          echo "TEST_SUITE=$SUITE" >> "$GITHUB_ENV"
+          echo "Selected suite: $SUITE"
+
       - name: Run Behave tests
+        shell: bash
         run: |
           mkdir -p reports/allure-results
-          behave -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
+          if [[ "$TEST_SUITE" == "all" ]]; then
+            behave -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
+          else
+            behave --tags="@$TEST_SUITE" -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
+          fi
 
       - name: Upload test artifacts
         if: ${{ !cancelled() }}
