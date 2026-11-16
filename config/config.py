@@ -10,7 +10,14 @@ load_dotenv(dotenv_path=env_path)
 
 
 # Application configuration
-BASE_URL = os.getenv("BASE_URL")
+TARGET_ENV = os.getenv("TARGET_ENV", "qa").lower()
+if TARGET_ENV not in {"dev", "qa", "staging"}:
+    raise ValueError(f"Unsupported TARGET_ENV: {TARGET_ENV}")
+
+# QA uses SauceDemo; other environments must supply a real deployed URL.
+BASE_URL = os.getenv("BASE_URL") or ("https://www.saucedemo.com" if TARGET_ENV == "qa" else None)
+if not BASE_URL or not BASE_URL.startswith(("http://", "https://")):
+    raise ValueError(f"BASE_URL must be configured for environment {TARGET_ENV}")
 APP_USERNAME = os.getenv("USERNAME")
 APP_PASSWORD = os.getenv("PASSWORD")
 

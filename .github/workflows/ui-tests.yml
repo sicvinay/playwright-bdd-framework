@@ -12,6 +12,16 @@ on:
       - main
 
   workflow_dispatch:
+    inputs:
+      target_environment:
+        description: 'Environment to test (dev/staging require a configured URL)'
+        required: true
+        type: choice
+        default: qa
+        options:
+          - qa
+          - dev
+          - staging
 
 jobs:
   ui-tests:
@@ -21,7 +31,10 @@ jobs:
     timeout-minutes: 30
 
     env:
-      BASE_URL: https://www.saucedemo.com
+      TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
+      QA_BASE_URL: https://www.saucedemo.com
+      DEV_BASE_URL: ${{ vars.DEV_BASE_URL }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL }}
       USERNAME: ${{ secrets.SAUCE_USERNAME }}
       PASSWORD: ${{ secrets.SAUCE_PASSWORD }}
 
@@ -43,6 +56,22 @@ jobs:
       - name: Install Playwright browsers
         run: |
           python -m playwright install --with-deps chromium
+
+      - name: Resolve target environment
+        shell: bash
+        run: |
+          case "$TARGET_ENV" in
+            qa) BASE_URL="$QA_BASE_URL" ;;
+            dev) BASE_URL="$DEV_BASE_URL" ;;
+            staging) BASE_URL="$STAGING_BASE_URL" ;;
+            *) echo "Unsupported target environment: $TARGET_ENV" >&2; exit 1 ;;
+          esac
+          if [[ -z "$BASE_URL" || ! "$BASE_URL" =~ ^https?:// ]]; then
+            echo "No valid URL configured for $TARGET_ENV. Configure the corresponding repository variable." >&2
+            exit 1
+          fi
+          echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "Selected target: $TARGET_ENV"
 
       - name: Run Behave tests
         run: |
