@@ -28,6 +28,16 @@ on:
           - regression
           - negative
           - all
+      browser:
+        description: 'Browser engine (all runs each browser in a separate job)'
+        required: true
+        type: choice
+        default: chromium
+        options:
+          - chromium
+          - firefox
+          - webkit
+          - all
       target_environment:
         description: 'Environment to test (dev/staging require a configured URL)'
         required: true
@@ -45,12 +55,18 @@ jobs:
 
     timeout-minutes: 30
 
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ fromJSON(inputs.browser == 'all' && '["chromium","firefox","webkit"]' || format('["{0}"]', inputs.browser || 'chromium')) }}
+
     concurrency:
       group: ui-tests-${{ github.workflow }}-${{ github.event_name == 'schedule' && 'scheduled-regression' || github.ref }}
       cancel-in-progress: false
 
     env:
       TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
+      BROWSER: ${{ matrix.browser }}
       REQUESTED_SUITE: ${{ inputs.test_suite || 'auto' }}
       QA_BASE_URL: https://www.saucedemo.com
       DEV_BASE_URL: ${{ vars.DEV_BASE_URL }}
@@ -88,7 +104,7 @@ jobs:
 
       - name: Install Playwright browsers
         run: |
-          python -m playwright install --with-deps chromium
+          python -m playwright install --with-deps "$BROWSER"
 
       - name: Resolve target environment
         shell: bash
@@ -135,8 +151,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p reports/allure-results
-          printf 'Environment=%s\nBase URL=%s\nTest suite=%s\n' "$TARGET_ENV" "$BASE_URL" "$TEST_SUITE" > reports/allure-results/environment.properties
-          printf 'Target: %s\nSuite: %s\nBranch: %s\nRun: %s\n' "$TARGET_ENV" "$TEST_SUITE" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" > reports/run-metadata.txt
+          printf 'Environment=%s\nBase URL=%s\nTest suite=%s\nBrowser=%s\n' "$TARGET_ENV" "$BASE_URL" "$TEST_SUITE" "$BROWSER" > reports/allure-results/environment.properties
+          printf 'Target: %s\nSuite: %s\nBrowser: %s\nBranch: %s\nRun: %s\n' "$TARGET_ENV" "$TEST_SUITE" "$BROWSER" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" > reports/run-metadata.txt
           if [[ "$TEST_SUITE" == "all" ]]; then
             behave -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
           else
@@ -163,6 +179,7 @@ jobs:
             echo '## UI automation execution'
             echo "- Environment: ${TARGET_ENV:-not resolved}"
             echo "- Suite: ${TEST_SUITE:-not selected}"
+            echo "- Browser: ${BROWSER:-not selected}"
             echo "- Behave outcome: ${TEST_OUTCOME}"
             echo '- Artifacts: screenshots, videos, traces, logs, Allure results and HTML report (when generated)'
             echo '- Retention: 14 days'
@@ -172,7 +189,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ui-automation-test-results
+          name: ui-automation-test-results-${{ matrix.browser }}
           path: reports/
           retention-days: 14
           if-no-files-found: warn
