@@ -113,6 +113,8 @@ def card(env, results, jobs):
     if bugs:
         heading_jira += " · " + ", ".join(f"{key} {action}" for key, action in sorted(bugs.items())[:4])
     blocks.append(section(f"Jira · {heading_jira}"))
+    if report_url := env.get("ALLURE_REPORT_URL"):
+        actions.append(("Open Allure report", report_url))
     if not actions:
         actions.append(("View run summary", run_url))
     evidence_rows = [failed_row] if failed_row else results
