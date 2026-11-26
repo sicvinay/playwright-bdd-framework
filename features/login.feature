@@ -58,3 +58,9 @@ Feature: Login Functionality
     Given user launches the application
     When user logs in with username "locked_out_user" and password "secret_sauce"
     Then the user should see the error message "Epic sadface: Sorry, this user has been locked out."
+
+  @defect_drill
+  Scenario: [INTEGRATION TEST] Incorrect validation message expectation for empty username
+    Given user launches the application
+    When user logs in with empty username and password "secret_sauce"
+    Then the user should see the error message "Epic sadface: Password is required"
