@@ -1,0 +1,199 @@
+"""Collect Behave shard outcomes and publish trusted regression results to Jira."""
+
+import base64
+import hashlib
+import json
+import os
+import re
+from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+
+class RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def jira(method, path, data=None, missing_ok=False):
+    cloud_id = os.environ["JIRA_CLOUD_ID"]
+    if not re.fullmatch(r"[0-9a-f-]{36}", cloud_id):
+        raise ValueError("Invalid Jira Cloud ID")
+    credentials = os.environ["JIRA_EMAIL"] + ":" + os.environ["JIRA_TOKEN"]
+    if not all(os.environ[name] for name in ("JIRA_EMAIL", "JIRA_TOKEN")):
+        raise ValueError("Jira CI credentials are missing")
+    auth = base64.b64encode(credentials.encode()).decode()
+    request = Request(
+        f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3{path}",
+        data=json.dumps(data).encode() if data is not None else None,
+        headers={"Authorization": "Basic " + auth, "Content-Type": "application/json",
+                 "Accept": "application/json"},
+        method=method,
+    )
+    try:
+        with build_opener(RejectRedirects()).open(request, timeout=25) as response:
+            body = response.read()
+    except HTTPError as exc:
+        if missing_ok and exc.code == 404:
+            return None
+        raise RuntimeError(f"Jira {method} failed (HTTP {exc.code})") from None
+    return json.loads(body) if body else {}
+
+
+def assertions(filename):
+    path = Path("reports", filename)
+    failures = {}
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            failure = json.loads(line)
+            # Ignore file line numbers in the fingerprint so unrelated edits do
+            # not generate a new Bug. Keep the feature and expanded scenario.
+            identity = [failure[field] for field in ("feature", "scenario", "step")]
+            digest = hashlib.sha256(json.dumps(identity).encode()).hexdigest()[:24]
+            failures[digest] = failure
+    return failures
+
+
+def collect():
+    first = assertions("ci-assertions.jsonl")
+    repeated = assertions("ci-confirmed-assertions.jsonl")
+    outcome = os.environ.get("TEST_OUTCOME", "")
+    result = {
+        "browser": os.environ["BROWSER"],
+        "shard": os.environ["SHARD_INDEX"],
+        "outcome": outcome,
+        "evidence": os.environ.get("EVIDENCE_URL", ""),
+        "candidates": len(first),
+        "confirmed": {key: first[key] for key in first.keys() & repeated.keys()}
+        if outcome == "failure" else {},
+    }
+    Path("jira-result.json").write_text(json.dumps(result), encoding="utf-8")
+
+
+def paragraph(text):
+    return {"type": "paragraph", "content": [{"type": "text", "text": text}]}
+
+
+def link(label, url):
+    return {"type": "paragraph", "content": [
+        {"type": "text", "text": label, "marks": [{"type": "link", "attrs": {"href": url}}]}
+    ]}
+
+
+def file_defect(results_issue, candidate, failure, evidence, run_url):
+    label = "pw-regression-" + candidate
+    property_path = f"/issue/{results_issue}/properties/{label}"
+    recorded = jira("GET", property_path, missing_ok=True)
+    if recorded is not None:
+        value = recorded["value"]
+        if "key" not in value:
+            raise RuntimeError(f"Resolve pending defect creation for {label} before retrying")
+        return value["key"]
+    matches = jira("POST", "/search/jql", {
+        "jql": f'project = SCRUM AND labels = "{label}"',
+        "fields": ["summary"], "maxResults": 2,
+    })["issues"]
+    if len(matches) > 1:
+        raise RuntimeError(f"Multiple Jira defects already match {label}")
+    if matches:
+        key = matches[0]["key"]
+    else:
+        # Reserve before creating. If creation times out or the runner dies,
+        # a later run stops on the reservation instead of creating a duplicate.
+        jira("PUT", property_path, {"pending_run": run_url})
+        content = [
+            paragraph("A Then assertion failed on the first run and on the confirmation run."),
+            paragraph(f"Feature: {failure['feature']}"),
+            paragraph(f"Scenario: {failure['scenario']} (line {failure['line']})"),
+            paragraph(f"Assertion step line: {failure['step_line']}"),
+            link("GitHub Actions run and job logs", run_url),
+        ]
+        if evidence:
+            content.append(link("Evidence archive (Allure HTML, logs, screenshots, video and traces when captured)", evidence))
+        created = jira("POST", "/issue", {"fields": {
+            "project": {"key": "SCRUM"}, "issuetype": {"name": "Bug"},
+            "summary": ("[Playwright regression] " + failure["scenario"])[:240],
+            "labels": ["automated-regression", label],
+            "description": {"version": 1, "type": "doc", "content": content},
+        }})
+        key = created["key"]
+    jira("PUT", property_path, {"key": key})
+    return key
+
+
+def publish():
+    issue = os.environ["JIRA_RESULTS_ISSUE"]
+    if not re.fullmatch(r"SCRUM-[1-9][0-9]*", issue):
+        raise ValueError("JIRA_RESULTS_ISSUE must identify a SCRUM issue")
+    repository = os.environ["GITHUB_REPOSITORY"]
+    run = os.environ["GITHUB_RUN_ID"]
+    attempt = os.environ["GITHUB_RUN_ATTEMPT"]
+    run_url = f"https://github.com/{repository}/actions/runs/{run}/attempts/{attempt}"
+    manifests = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(Path("jira-results").glob("*/jira-result.json"))
+    ]
+    matrix = os.environ["MATRIX_RESULT"]
+    expected = int(os.environ["EXPECTED_SHARDS"])
+    environment = os.environ["TARGET_ENV"]
+    event = os.environ["GITHUB_EVENT_NAME"]
+    eligible = (
+        event == "schedule" and environment == "qa" and attempt == "1"
+        and os.environ.get("JIRA_DEFECTS_ENABLED") == "true"
+    )
+
+    errors = []
+    for result in manifests:
+        browser = result["browser"]
+        shard = result["shard"]
+        evidence = result["evidence"]
+        if not evidence.startswith(f"https://github.com/{repository}/actions/runs/{run}/artifacts/"):
+            evidence = ""
+        confirmed = result["confirmed"]
+        outcome = result["outcome"]
+        if confirmed:
+            classification = f"{len(confirmed)} reproduced assertion(s)"
+        elif result["candidates"]:
+            classification = "assertion failure, reproduction unconfirmed"
+        elif outcome == "success":
+            classification = "Behave completed"
+        else:
+            classification = "infrastructure, framework error, or unclassified failure"
+        defects = []
+        if eligible:
+            for fingerprint, failure in sorted(confirmed.items()):
+                try:
+                    defects.append(file_defect(issue, fingerprint, failure, evidence, run_url))
+                except RuntimeError as exc:
+                    errors.append(str(exc))
+        title = f"{browser} shard {shard} | {classification}"
+        if defects:
+            title += " | " + ", ".join(defects)
+        jira("POST", f"/issue/{issue}/remotelink", {
+            "globalId": f"github:{repository}:{event}:{environment}:{browser}:{shard}",
+            "relationship": "has latest CI evidence",
+            "object": {"url": evidence or run_url, "title": title[:240],
+                       "summary": "Allure HTML, logs, screenshots, videos and traces where available."
+                       if evidence else "Open GitHub Actions for job logs."},
+        })
+        for defect in set(defects):
+            jira("POST", f"/issue/{defect}/remotelink", {
+                "globalId": f"github:{repository}:latest-regression",
+                "relationship": "last reproduced in",
+                "object": {"url": evidence or run_url, "title": f"Run {run} | {browser} shard {shard}"},
+            })
+
+    jira("POST", f"/issue/{issue}/remotelink", {
+        "globalId": f"github:{repository}:{event}:{environment}:summary",
+        "relationship": "has latest CI run",
+        "object": {"url": run_url,
+                   "title": f"{event} / {environment}: {matrix} ({len(manifests)}/{expected} shard reports)"},
+    })
+    if errors:
+        raise RuntimeError("; ".join(dict.fromkeys(errors)))
+
+
+if __name__ == "__main__":
+    import sys
+
+    {"collect": collect, "publish": publish}[sys.argv[1]]()
