@@ -19,10 +19,15 @@ def jira(method, path, data=None, missing_ok=False):
     cloud_id = os.environ["JIRA_CLOUD_ID"]
     if not re.fullmatch(r"[0-9a-f-]{36}", cloud_id):
         raise ValueError("Invalid Jira Cloud ID")
-    credentials = os.environ["JIRA_EMAIL"] + ":" + os.environ["JIRA_TOKEN"]
-    if not all(os.environ[name] for name in ("JIRA_EMAIL", "JIRA_TOKEN")):
+    email = os.environ.get("JIRA_EMAIL", "").strip()
+    token = os.environ.get("JIRA_TOKEN", "").strip()
+    if not email or not token:
         raise ValueError("Jira CI credentials are missing")
-    auth = base64.b64encode(credentials.encode()).decode()
+    if not re.fullmatch(r"[^\s:@]+@[^\s:@]+", email):
+        raise ValueError("Jira CI email must be a single email address")
+    if any(character.isspace() for character in token):
+        raise ValueError("Jira CI token contains internal whitespace")
+    auth = base64.b64encode(f"{email}:{token}".encode()).decode()
     request = Request(
         f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3{path}",
         data=json.dumps(data).encode() if data is not None else None,
@@ -36,7 +41,9 @@ def jira(method, path, data=None, missing_ok=False):
     except HTTPError as exc:
         if missing_ok and exc.code == 404:
             return None
-        raise RuntimeError(f"Jira {method} failed (HTTP {exc.code})") from None
+        trace_id = exc.headers.get("atl-traceid", "")
+        trace = f"; Atlassian trace ID {trace_id}" if re.fullmatch(r"[0-9a-fA-F-]{16,64}", trace_id) else ""
+        raise RuntimeError(f"Jira {method} failed (HTTP {exc.code}{trace})") from None
     return json.loads(body) if body else {}
 
 
@@ -125,6 +132,11 @@ def publish():
     issue = os.environ["JIRA_RESULTS_ISSUE"]
     if not re.fullmatch(r"SCRUM-[1-9][0-9]*", issue):
         raise ValueError("JIRA_RESULTS_ISSUE must identify a SCRUM issue")
+    print("Checking GitHub Actions credentials against the Jira reporting issue", flush=True)
+    report_issue = jira("GET", f"/issue/{issue}?fields=summary")
+    if report_issue.get("key") != issue:
+        raise RuntimeError("Jira returned an unexpected reporting issue")
+    print("Jira reporting issue is readable. Publishing CI results.", flush=True)
     repository = os.environ["GITHUB_REPOSITORY"]
     run = os.environ["GITHUB_RUN_ID"]
     attempt = os.environ["GITHUB_RUN_ATTEMPT"]
