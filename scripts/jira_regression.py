@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -15,7 +16,27 @@ class RejectRedirects(HTTPRedirectHandler):
         return None
 
 
-def jira(method, path, data=None, missing_ok=False):
+def curl_read_status(url, credentials):
+    """Compare HTTP clients without putting credentials in logs or arguments."""
+    escaped = credentials.replace("\\", "\\\\").replace('"', '\\"')
+    result = subprocess.run(
+        ["curl", "--disable", "--config", "-", "--basic", "--silent",
+         "--output", "/dev/null", "--write-out", "%{http_code}",
+         "--max-time", "25", "--header", "Accept: application/json",
+         "--header", "Content-Type: application/json", url],
+        input=f'user = "{escaped}"\n',
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    status = result.stdout.strip()
+    if result.returncode == 0 and re.fullmatch(r"[1-5]\d{2}", status):
+        print(f"Jira curl read returned HTTP {status}", flush=True)
+    else:
+        print(f"Jira curl read did not return an HTTP status (curl exit {result.returncode})", flush=True)
+
+
+def jira(method, path, data=None, missing_ok=False, compare_curl=False):
     cloud_id = os.environ["JIRA_CLOUD_ID"]
     if not re.fullmatch(r"[0-9a-f-]{36}", cloud_id):
         raise ValueError("Invalid Jira Cloud ID")
@@ -27,9 +48,11 @@ def jira(method, path, data=None, missing_ok=False):
         raise ValueError("Jira CI email must be a single email address")
     if any(character.isspace() for character in token):
         raise ValueError("Jira CI token contains internal whitespace")
-    auth = base64.b64encode(f"{email}:{token}".encode()).decode()
+    credentials = f"{email}:{token}"
+    auth = base64.b64encode(credentials.encode()).decode()
+    url = f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3{path}"
     request = Request(
-        f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3{path}",
+        url,
         data=json.dumps(data).encode() if data is not None else None,
         headers={"Authorization": "Basic " + auth, "Content-Type": "application/json",
                  "Accept": "application/json"},
@@ -41,6 +64,8 @@ def jira(method, path, data=None, missing_ok=False):
     except HTTPError as exc:
         if missing_ok and exc.code == 404:
             return None
+        if compare_curl and exc.code == 401:
+            curl_read_status(url, credentials)
         trace_id = exc.headers.get("atl-traceid", "")
         trace = f"; Atlassian trace ID {trace_id}" if re.fullmatch(r"[0-9a-fA-F-]{16,64}", trace_id) else ""
         raise RuntimeError(f"Jira {method} failed (HTTP {exc.code}{trace})") from None
@@ -133,7 +158,7 @@ def publish():
     if not re.fullmatch(r"SCRUM-[1-9][0-9]*", issue):
         raise ValueError("JIRA_RESULTS_ISSUE must identify a SCRUM issue")
     print("Checking GitHub Actions credentials against the Jira reporting issue", flush=True)
-    report_issue = jira("GET", f"/issue/{issue}?fields=summary")
+    report_issue = jira("GET", f"/issue/{issue}?fields=summary", compare_curl=True)
     if report_issue.get("key") != issue:
         raise RuntimeError("Jira returned an unexpected reporting issue")
     print("Jira reporting issue is readable. Publishing CI results.", flush=True)
