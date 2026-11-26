@@ -27,6 +27,7 @@ on:
           - sanity
           - regression
           - negative
+          - defect_drill
           - all
       browser:
         description: 'Browser engine (all runs each browser in a separate job)'
@@ -143,9 +144,14 @@ jobs:
             if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then SUITE="smoke"; else SUITE="regression"; fi
           fi
           case "$SUITE" in
-            smoke|sanity|regression|negative|all) ;;
+            smoke|sanity|regression|negative|all|defect_drill) ;;
             *) echo "Unsupported test suite: $SUITE" >&2; exit 1 ;;
           esac
+          if [[ "$SUITE" == defect_drill && ( "$GITHUB_EVENT_NAME" != workflow_dispatch ||
+                "$GITHUB_REF" != refs/heads/main || "$TARGET_ENV" != qa ) ]]; then
+            echo "Defect drill requires a manual run on main in QA." >&2
+            exit 1
+          fi
           echo "TEST_SUITE=$SUITE" >> "$GITHUB_ENV"
           echo "Selected suite: $SUITE"
 
@@ -170,15 +176,16 @@ jobs:
             exit 0
           fi
           printf 'Shard %s/%s executes: %s\\n' "$SHARD_INDEX" "$SHARD_COUNT" "${SELECTED[*]}"
-          TAGS=()
-          if [[ "$TEST_SUITE" != "all" ]]; then
-            TAGS=(--tags="@$TEST_SUITE")
-          fi
+          case "$TEST_SUITE" in
+            defect_drill) TAGS=(--tags="@defect_drill") ;;
+            all) TAGS=(--tags="not @wip and not @defect_drill") ;;
+            *) TAGS=(--tags="@$TEST_SUITE and not @wip and not @defect_drill") ;;
+          esac
           outcome=0
           CI_ASSERTIONS_FILE=reports/ci-assertions.jsonl \
             behave "${SELECTED[@]}" "${TAGS[@]}" -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty || outcome=$?
           if [[ "$outcome" == 1 && -s reports/ci-assertions.jsonl &&
-                "$GITHUB_EVENT_NAME" == schedule && "${JIRA_DEFECTS_ENABLED:-}" == true ]]; then
+                ( "$GITHUB_EVENT_NAME" == schedule || "$TEST_SUITE" == defect_drill ) && "${JIRA_DEFECTS_ENABLED:-}" == true ]]; then
             confirmation=0
             CI_ASSERTIONS_FILE=reports/ci-confirmed-assertions.jsonl behave "${SELECTED[@]}" "${TAGS[@]}" || confirmation=$?
             case "$confirmation" in
@@ -277,8 +284,9 @@ jobs:
           JIRA_EMAIL: ${{ secrets.JIRA_CI_EMAIL }}
           JIRA_TOKEN: ${{ secrets.JIRA_CI_TOKEN }}
           JIRA_CLOUD_ID: ${{ vars.JIRA_CLOUD_ID }}
-          JIRA_RESULTS_ISSUE: ${{ vars.JIRA_RESULTS_ISSUE }}
+          JIRA_RESULTS_ISSUE: ${{ inputs.test_suite == 'defect_drill' && 'SCRUM-59' || vars.JIRA_RESULTS_ISSUE }}
           JIRA_DEFECTS_ENABLED: ${{ vars.JIRA_DEFECTS_ENABLED }}
+          JIRA_DEFECT_DRILL: ${{ inputs.test_suite == 'defect_drill' }}
           MATRIX_RESULT: ${{ needs.ui-tests.result }}
           EXPECTED_SHARDS: ${{ inputs.browser == 'all' && '6' || '2' }}
           TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
