@@ -90,7 +90,16 @@ def collect():
     first = assertions("ci-assertions.jsonl")
     repeated = assertions("ci-confirmed-assertions.jsonl")
     outcome = os.environ.get("TEST_OUTCOME", "")
+    scenarios = {}
+    for path in sorted(Path("reports/allure-results").glob("*-result.json")):
+        entry = json.loads(path.read_text(encoding="utf-8"))
+        scenarios[entry.get("historyId") or entry.get("fullName") or path.stem] = {
+            "name": entry.get("name", "Unnamed scenario"),
+            "status": entry.get("status", "unknown"),
+        }
     result = {
+        "scenarios": list(scenarios.values()),
+        "retry": os.environ.get("RETRY_OUTCOME", "not run"),
         "browser": os.environ["BROWSER"],
         "shard": os.environ["SHARD_INDEX"],
         "outcome": outcome,
@@ -120,7 +129,7 @@ def file_defect(results_issue, candidate, failure, evidence, run_url):
         value = recorded["value"]
         if "key" not in value:
             raise RuntimeError(f"Resolve pending defect creation for {label} before retrying")
-        return value["key"]
+        return value["key"], "reused"
     matches = jira("POST", "/search/jql", {
         "jql": f'project = SCRUM AND labels = "{label}"',
         "fields": ["summary"], "maxResults": 2,
@@ -150,7 +159,7 @@ def file_defect(results_issue, candidate, failure, evidence, run_url):
         }})
         key = created["key"]
     jira("PUT", property_path, {"key": key})
-    return key
+    return key, "reused" if matches else "created"
 
 
 def publish():
@@ -180,6 +189,7 @@ def publish():
     )
 
     errors = []
+    bug_outcomes = {}
     for result in manifests:
         browser = result["browser"]
         shard = result["shard"]
@@ -200,7 +210,10 @@ def publish():
         if eligible:
             for fingerprint, failure in sorted(confirmed.items()):
                 try:
-                    defects.append(file_defect(issue, fingerprint, failure, evidence, run_url))
+                    key, action = file_defect(issue, fingerprint, failure, evidence, run_url)
+                    defects.append(key)
+                    if key not in bug_outcomes or action == "created":
+                        bug_outcomes[key] = action
                 except RuntimeError as exc:
                     errors.append(str(exc))
         title = f"{browser} shard {shard} | {classification}"
@@ -226,6 +239,9 @@ def publish():
         "object": {"url": run_url,
                    "title": f"{event} / {environment}: {matrix} ({len(manifests)}/{expected} shard reports)"},
     })
+    if output := os.environ.get("GITHUB_OUTPUT"):
+        with Path(output).open("a", encoding="utf-8") as stream:
+            stream.write(f"bugs={json.dumps(bug_outcomes)}\n")
     if errors:
         raise RuntimeError("; ".join(dict.fromkeys(errors)))
 
