@@ -181,6 +181,11 @@ jobs:
                 "$GITHUB_EVENT_NAME" == schedule && "${JIRA_DEFECTS_ENABLED:-}" == true ]]; then
             confirmation=0
             CI_ASSERTIONS_FILE=reports/ci-confirmed-assertions.jsonl behave "${SELECTED[@]}" "${TAGS[@]}" || confirmation=$?
+            case "$confirmation" in
+              0) echo "retry=passed" >> "$GITHUB_OUTPUT" ;;
+              1) echo "retry=failed" >> "$GITHUB_OUTPUT" ;;
+              *) echo "retry=error" >> "$GITHUB_OUTPUT" ;;
+            esac
             if [[ "$confirmation" != 1 ]]; then
               rm -f reports/ci-confirmed-assertions.jsonl
             fi
@@ -226,15 +231,16 @@ jobs:
 
 
       - name: Collect Jira-safe result manifest
-        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.JIRA_REPORTING_ENABLED == 'true' }}
+        if: ${{ !cancelled() }}
         continue-on-error: true
         env:
           TEST_OUTCOME: ${{ steps.behave_tests.outcome }}
           EVIDENCE_URL: ${{ steps.upload_evidence.outputs.artifact-url }}
+          RETRY_OUTCOME: ${{ steps.behave_tests.outputs.retry || 'not run' }}
         run: python scripts/jira_regression.py collect
 
       - name: Upload Jira result manifest
-        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.JIRA_REPORTING_ENABLED == 'true' }}
+        if: ${{ !cancelled() }}
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -242,42 +248,11 @@ jobs:
           path: jira-result.json
           retention-days: 14
 
-      - name: Send Slack notification
-        if: ${{ always() }}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          STATUS: ${{ job.status }}
-          REPOSITORY: ${{ github.repository }}
-          BRANCH: ${{ github.ref_name }}
-          WORKFLOW: ${{ github.workflow }}
-          RUN_NUMBER: ${{ github.run_number }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          if [ "$STATUS" = "success" ]; then
-            EMOJI="🟢"
-            MESSAGE="UI Automation Tests Passed"
-          else
-            EMOJI="🔴"
-            MESSAGE="UI Automation Tests Failed"
-          fi
-
-          payload=$(jq -n \
-            --arg text "$EMOJI $MESSAGE\nRepository: $REPOSITORY\nBranch: $BRANCH\nWorkflow: $WORKFLOW\nRun: #$RUN_NUMBER\nRun URL: $RUN_URL" \
-            '{text: $text}')
-
-          if [ -z "$SLACK_WEBHOOK_URL" ]; then
-            echo "Slack webhook not configured; skipping notification."
-            exit 0
-          fi
-
-          curl -X POST \
-            -H "Content-Type: application/json" \
-            --data "$payload" \
-            "$SLACK_WEBHOOK_URL"
-
   jira-report:
     needs: ui-tests
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.JIRA_REPORTING_ENABLED == 'true' }}
+    outputs:
+      bugs: ${{ steps.publish.outputs.bugs }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -297,6 +272,7 @@ jobs:
           path: jira-results
 
       - name: Publish results to Jira
+        id: publish
         env:
           JIRA_EMAIL: ${{ secrets.JIRA_CI_EMAIL }}
           JIRA_TOKEN: ${{ secrets.JIRA_CI_TOKEN }}
@@ -307,3 +283,40 @@ jobs:
           EXPECTED_SHARDS: ${{ inputs.browser == 'all' && '6' || '2' }}
           TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
         run: python scripts/jira_regression.py publish
+
+  slack-summary:
+    needs: [ui-tests, jira-report]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: jira-result-*-attempt-${{ github.run_attempt }}
+          path: jira-results
+
+      - name: Read GitHub Actions job results
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" > ci-jobs.json || rm -f ci-jobs.json
+
+      - name: Publish Slack run summary
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          MATRIX_RESULT: ${{ needs.ui-tests.result }}
+          JIRA_RESULT: ${{ needs.jira-report.result }}
+          JIRA_BUGS: ${{ needs.jira-report.outputs.bugs }}
+          JIRA_RESULTS_ISSUE: ${{ vars.JIRA_RESULTS_ISSUE }}
+          JIRA_SITE_URL: ${{ vars.JIRA_SITE_URL }}
+          EXPECTED_SHARDS: ${{ inputs.browser == 'all' && '6' || '2' }}
+          TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
+        run: python scripts/slack_ci_summary.py
