@@ -151,6 +151,8 @@ jobs:
 
       - name: Run Behave tests
         id: behave_tests
+        env:
+          JIRA_DEFECTS_ENABLED: ${{ vars.JIRA_DEFECTS_ENABLED }}
         shell: bash
         run: |
           mkdir -p reports/allure-results
@@ -168,11 +170,22 @@ jobs:
             exit 0
           fi
           printf 'Shard %s/%s executes: %s\\n' "$SHARD_INDEX" "$SHARD_COUNT" "${SELECTED[*]}"
-          if [[ "$TEST_SUITE" == "all" ]]; then
-            behave "${SELECTED[@]}" -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
-          else
-            behave "${SELECTED[@]}" --tags="@$TEST_SUITE" -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty
+          TAGS=()
+          if [[ "$TEST_SUITE" != "all" ]]; then
+            TAGS=(--tags="@$TEST_SUITE")
           fi
+          outcome=0
+          CI_ASSERTIONS_FILE=reports/ci-assertions.jsonl \
+            behave "${SELECTED[@]}" "${TAGS[@]}" -f allure_behave.formatter:AllureFormatter -o reports/allure-results -f pretty || outcome=$?
+          if [[ "$outcome" == 1 && -s reports/ci-assertions.jsonl &&
+                "$GITHUB_EVENT_NAME" == schedule && "${JIRA_DEFECTS_ENABLED:-}" == true ]]; then
+            confirmation=0
+            CI_ASSERTIONS_FILE=reports/ci-confirmed-assertions.jsonl behave "${SELECTED[@]}" "${TAGS[@]}" || confirmation=$?
+            if [[ "$confirmation" != 1 ]]; then
+              rm -f reports/ci-confirmed-assertions.jsonl
+            fi
+          fi
+          exit "$outcome"
 
       - name: Generate Allure HTML report
         if: ${{ always() }}
@@ -203,12 +216,31 @@ jobs:
 
       - name: Upload test artifacts
         if: ${{ !cancelled() }}
+        id: upload_evidence
         uses: actions/upload-artifact@v4
         with:
           name: ui-automation-test-results-${{ matrix.browser }}-shard-${{ matrix.shard }}
           path: reports/
           retention-days: 14
           if-no-files-found: warn
+
+
+      - name: Collect Jira-safe result manifest
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.JIRA_REPORTING_ENABLED == 'true' }}
+        continue-on-error: true
+        env:
+          TEST_OUTCOME: ${{ steps.behave_tests.outcome }}
+          EVIDENCE_URL: ${{ steps.upload_evidence.outputs.artifact-url }}
+        run: python scripts/jira_regression.py collect
+
+      - name: Upload Jira result manifest
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.JIRA_REPORTING_ENABLED == 'true' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: jira-result-${{ matrix.browser }}-shard-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
+          path: jira-result.json
+          retention-days: 14
 
       - name: Send Slack notification
         if: ${{ always() }}
@@ -242,3 +274,36 @@ jobs:
             -H "Content-Type: application/json" \
             --data "$payload" \
             "$SLACK_WEBHOOK_URL"
+
+  jira-report:
+    needs: ui-tests
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.JIRA_REPORTING_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    concurrency:
+      group: jira-regression-writer
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: jira-result-*-attempt-${{ github.run_attempt }}
+          path: jira-results
+
+      - name: Publish results to Jira
+        env:
+          JIRA_EMAIL: ${{ secrets.JIRA_CI_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_CI_TOKEN }}
+          JIRA_CLOUD_ID: ${{ vars.JIRA_CLOUD_ID }}
+          JIRA_RESULTS_ISSUE: ${{ vars.JIRA_RESULTS_ISSUE }}
+          JIRA_DEFECTS_ENABLED: ${{ vars.JIRA_DEFECTS_ENABLED }}
+          MATRIX_RESULT: ${{ needs.ui-tests.result }}
+          EXPECTED_SHARDS: ${{ inputs.browser == 'all' && '6' || '2' }}
+          TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
+        run: python scripts/jira_regression.py publish
