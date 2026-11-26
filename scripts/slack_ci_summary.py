@@ -64,6 +64,29 @@ def baseline_for(env, results):
     return None
 
 
+def tag_summary(results):
+    groups = {}
+    for row in results:
+        for case in row["scenarios"]:
+            for tag in case.get("tags", []):
+                groups.setdefault(tag, []).append((row, case))
+    lines = []
+    for tag, cases in sorted(groups.items()):
+        counts = Counter(case["status"] for _, case in cases)
+        summary = " · ".join(f"{counts[status]} {status}" for status in ("passed", "failed", "skipped"))
+        if other := len(cases) - sum(counts[status] for status in ("passed", "failed", "skipped")):
+            summary += f" · {other} broken or unknown"
+        durations = [(case["stop"] - case["start"], row, case) for row, case in cases
+                     if case["status"] in {"passed", "failed", "broken"}
+                     and type(case.get("start")) is int and type(case.get("stop")) is int
+                     and case["stop"] >= case["start"]]
+        if durations:
+            duration, row, case = max(durations, key=lambda item: item[0])
+            summary += f" · Slowest: {case['name'][:120]} ({BROWSER_NAMES[row['browser']]}, {duration / 1000:.1f}s)"
+        lines.append(f"@{tag} · {summary}")
+    return lines
+
+
 def card(env, results, jobs, metadata=None, payload=None, baseline=None):
     metadata = metadata or {}
     payload = payload or {}
@@ -174,11 +197,21 @@ def card(env, results, jobs, metadata=None, payload=None, baseline=None):
         ) for job in ui_jobs.values()
     ):
         counts = "Setup failed in all test jobs. No tests ran."
+    tags = tag_summary(results)
+    reported_jobs = {(row["browser"], str(row["shard"])) for row in results if row["scenarios"]}
+    missing_failures = [
+        job["name"] for job in ui_jobs.values()
+        if job["conclusion"] == "failure"
+        and (match := re.fullmatch(r"ui-tests \(([^,]+), (\d+)\)", job["name"]))
+        and match.groups() not in reported_jobs
+    ]
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": title}},
         {"type": "context", "elements": [{"type": "plain_text", "text": context}]},
         section(f"Trigger · {trigger}\n{tested}\nSuite · {suite_name.replace('_', ' ').title()}\n{counts}\n{coverage}"),
         *([section("\n".join(browser_lines))] if browser_lines else []),
+        *([section("Results by BDD tag · scenarios can appear under multiple tags\n" + "\n".join(tags))] if tags else []),
+        *([section("Failed jobs without scenario results · " + ", ".join(missing_failures))] if missing_failures else []),
         *([section("\n".join(timings))] if timings else []),
     ]
     actions = []
@@ -217,6 +250,9 @@ def card(env, results, jobs, metadata=None, payload=None, baseline=None):
     blocks.append(section(f"Jira · {heading_jira}"))
     if report_url := env.get("ALLURE_REPORT_URL"):
         actions.append(("Open Allure report", report_url))
+    full_report = env.get("FULL_ALLURE_URL", "")
+    if full_report.startswith(f"{run}/artifacts/"):
+        actions.append(("Download full evidence", full_report))
     if not actions:
         actions.append(("View run summary", run_url))
     evidence_rows = [failed_row] if failed_row else results if len(results) == 1 else []
@@ -270,3 +306,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

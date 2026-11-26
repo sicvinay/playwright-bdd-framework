@@ -11,6 +11,9 @@ from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
+REPORT_TAGS = ("smoke", "sanity", "regression", "negative", "defect_drill")
+
+
 class RejectRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -96,6 +99,10 @@ def collect():
         scenarios[entry.get("historyId") or entry.get("fullName") or path.stem] = {
             "name": entry.get("name", "Unnamed scenario"),
             "status": entry.get("status", "unknown"),
+            "tags": sorted({
+                label["value"].lstrip("@") for label in entry.get("labels", [])
+                if label.get("name") == "tag" and label["value"].lstrip("@") in REPORT_TAGS
+            }),
             "message": entry.get("statusDetails", {}).get("message", "")[:600]
             if os.environ.get("TEST_SUITE") == "defect_drill" else "",
             "start": entry.get("start"),
@@ -254,6 +261,14 @@ def publish():
         "object": {"url": run_url,
                    "title": f"{event} / {environment}: {matrix} ({len(manifests)}/{expected} shard reports)"},
     })
+    full_report = os.environ.get("FULL_ALLURE_URL", "")
+    if full_report.startswith(f"https://github.com/{repository}/actions/runs/{run}/artifacts/"):
+        for report_key in {issue, *bug_outcomes}:
+            jira("POST", f"/issue/{report_key}/remotelink", {
+                "globalId": f"github:{repository}:full-allure:{run}:{attempt}",
+                "relationship": "has consolidated test evidence",
+                "object": {"url": full_report, "title": f"Download full evidence · Run {run} · Attempt {attempt}"},
+            })
     if report_url := os.environ.get("ALLURE_REPORT_URL"):
         for report_key in {issue, *bug_outcomes}:
             jira("POST", f"/issue/{report_key}/remotelink", {
@@ -281,3 +296,4 @@ if __name__ == "__main__":
     import sys
 
     {"collect": collect, "publish": publish}[sys.argv[1]]()
+
