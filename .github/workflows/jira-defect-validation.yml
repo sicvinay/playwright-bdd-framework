@@ -1,0 +1,77 @@
+name: Validate Jira defect filing
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: jira-regression-writer
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Exercise synthetic Jira reporting paths
+        env:
+          JIRA_EMAIL: ${{ secrets.JIRA_CI_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_CI_TOKEN }}
+          JIRA_CLOUD_ID: ${{ vars.JIRA_CLOUD_ID }}
+          JIRA_RESULTS_ISSUE: SCRUM-59
+          JIRA_DEFECTS_ENABLED: 'true'
+          MATRIX_RESULT: failure
+          EXPECTED_SHARDS: '1'
+          TARGET_ENV: qa
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          from scripts.jira_regression import collect, jira, publish
+
+          issue = os.environ["JIRA_RESULTS_ISSUE"]
+          os.environ.update(GITHUB_EVENT_NAME="schedule", GITHUB_RUN_ATTEMPT="1",
+                            BROWSER="chromium", SHARD_INDEX="0", TEST_OUTCOME="failure")
+          reports = Path("reports")
+          reports.mkdir(exist_ok=True)
+          manifest = Path("jira-results/synthetic/jira-result.json")
+          manifest.parent.mkdir(parents=True, exist_ok=True)
+          failure = {"feature": "synthetic.feature", "scenario": "[INTEGRATION TEST] Synthetic Jira defect validation SCRUM-59",
+                     "step": "Then the synthetic assertion fails", "line": 1, "step_line": 2}
+          identity = [failure[field] for field in ("feature", "scenario", "step")]
+          label = "pw-regression-" + hashlib.sha256(json.dumps(identity).encode()).hexdigest()[:24]
+          property_path = f"/issue/{issue}/properties/{label}"
+          previous = jira("GET", property_path, missing_ok=True)
+
+          def report():
+              collect()
+              Path("jira-result.json").replace(manifest)
+              publish()
+
+          report()
+          if jira("GET", property_path, missing_ok=True) != previous:
+              raise RuntimeError("Infrastructure case changed defect tracking")
+          links = jira("GET", f"/issue/{issue}/remotelink")
+          if not any("infrastructure, framework error" in item["object"]["title"] for item in links):
+              raise RuntimeError("Infrastructure classification was not published")
+          print("Infrastructure failure reported without filing a Bug")
+
+          for name in ("ci-assertions.jsonl", "ci-confirmed-assertions.jsonl"):
+              (reports / name).write_text(json.dumps(failure) + "\n", encoding="utf-8")
+          report()
+          key = jira("GET", property_path)["value"]["key"]
+          report()
+          if jira("GET", property_path)["value"]["key"] != key:
+              raise RuntimeError("Repeated report did not reuse the same Bug")
+          bug = jira("GET", f"/issue/{key}?fields=labels,issuetype")
+          if label not in bug["fields"]["labels"] or bug["fields"]["issuetype"]["name"] != "Bug":
+              raise RuntimeError("The referenced Jira issue is not the expected test Bug")
+          print(f"Synthetic assertion used {key} on both reports")
+          PY
