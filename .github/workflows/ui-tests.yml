@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: ${{ fromJSON(inputs.browser == 'all' && '["chromium","firefox","webkit"]' || format('["{0}"]', inputs.browser || 'chromium')) }}
+        browser: ${{ fromJSON((github.event_name == 'schedule' || inputs.browser == 'all') && '["chromium","firefox","webkit"]' || format('["{0}"]', inputs.browser || 'chromium')) }}
         shard: [0, 1]
 
     concurrency:
@@ -260,6 +260,7 @@ jobs:
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.JIRA_REPORTING_ENABLED == 'true' }}
     outputs:
       bugs: ${{ steps.publish.outputs.bugs }}
+      owners: ${{ steps.publish.outputs.owners }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -289,7 +290,7 @@ jobs:
           ALLURE_REPORT_URL: ${{ needs.allure-pages.outputs.report_url }}
           JIRA_DEFECT_DRILL: ${{ inputs.test_suite == 'defect_drill' }}
           MATRIX_RESULT: ${{ needs.ui-tests.result }}
-          EXPECTED_SHARDS: ${{ inputs.browser == 'all' && '6' || '2' }}
+          EXPECTED_SHARDS: ${{ (github.event_name == 'schedule' || inputs.browser == 'all') && '6' || '2' }}
           TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
         run: python scripts/jira_regression.py publish
 
@@ -316,18 +317,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" > ci-run.json || rm -f ci-run.json
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" > ci-jobs.json || rm -f ci-jobs.json
 
       - name: Publish Slack run summary
         env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SUITE: ${{ inputs.test_suite }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           MATRIX_RESULT: ${{ needs.ui-tests.result }}
           JIRA_RESULT: ${{ needs.jira-report.result }}
           ALLURE_REPORT_URL: ${{ needs.allure-pages.outputs.report_url }}
           JIRA_BUGS: ${{ needs.jira-report.outputs.bugs }}
+          JIRA_OWNERS: ${{ needs.jira-report.outputs.owners }}
           JIRA_RESULTS_ISSUE: ${{ vars.JIRA_RESULTS_ISSUE }}
           JIRA_SITE_URL: ${{ vars.JIRA_SITE_URL }}
-          EXPECTED_SHARDS: ${{ inputs.browser == 'all' && '6' || '2' }}
+          EXPECTED_SHARDS: ${{ (github.event_name == 'schedule' || inputs.browser == 'all') && '6' || '2' }}
           TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
         run: python scripts/slack_ci_summary.py
 
