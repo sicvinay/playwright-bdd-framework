@@ -96,6 +96,8 @@ def collect():
         scenarios[entry.get("historyId") or entry.get("fullName") or path.stem] = {
             "name": entry.get("name", "Unnamed scenario"),
             "status": entry.get("status", "unknown"),
+            "start": entry.get("start"),
+            "stop": entry.get("stop"),
         }
     result = {
         "scenarios": list(scenarios.values()),
@@ -248,6 +250,13 @@ def publish():
         "object": {"url": run_url,
                    "title": f"{event} / {environment}: {matrix} ({len(manifests)}/{expected} shard reports)"},
     })
+    if report_url := os.environ.get("ALLURE_REPORT_URL"):
+        for report_key in {issue, *bug_outcomes}:
+            jira("POST", f"/issue/{report_key}/remotelink", {
+                "globalId": f"github:{repository}:allure:{run}:{attempt}",
+                "relationship": "has Allure report",
+                "object": {"url": report_url, "title": f"Open Allure report · Run {run} · Attempt {attempt}"},
+            })
     if output := os.environ.get("GITHUB_OUTPUT"):
         with Path(output).open("a", encoding="utf-8") as stream:
             stream.write(f"bugs={json.dumps(bug_outcomes)}\n")

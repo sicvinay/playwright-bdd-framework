@@ -256,7 +256,7 @@ jobs:
           retention-days: 14
 
   jira-report:
-    needs: ui-tests
+    needs: [ui-tests, allure-pages]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.JIRA_REPORTING_ENABLED == 'true' }}
     outputs:
       bugs: ${{ steps.publish.outputs.bugs }}
@@ -286,6 +286,7 @@ jobs:
           JIRA_CLOUD_ID: ${{ vars.JIRA_CLOUD_ID }}
           JIRA_RESULTS_ISSUE: ${{ inputs.test_suite == 'defect_drill' && 'SCRUM-59' || vars.JIRA_RESULTS_ISSUE }}
           JIRA_DEFECTS_ENABLED: ${{ vars.JIRA_DEFECTS_ENABLED }}
+          ALLURE_REPORT_URL: ${{ needs.allure-pages.outputs.report_url }}
           JIRA_DEFECT_DRILL: ${{ inputs.test_suite == 'defect_drill' }}
           MATRIX_RESULT: ${{ needs.ui-tests.result }}
           EXPECTED_SHARDS: ${{ inputs.browser == 'all' && '6' || '2' }}
@@ -293,7 +294,7 @@ jobs:
         run: python scripts/jira_regression.py publish
 
   slack-summary:
-    needs: [ui-tests, jira-report]
+    needs: [ui-tests, jira-report, allure-pages]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -322,9 +323,86 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           MATRIX_RESULT: ${{ needs.ui-tests.result }}
           JIRA_RESULT: ${{ needs.jira-report.result }}
+          ALLURE_REPORT_URL: ${{ needs.allure-pages.outputs.report_url }}
           JIRA_BUGS: ${{ needs.jira-report.outputs.bugs }}
           JIRA_RESULTS_ISSUE: ${{ vars.JIRA_RESULTS_ISSUE }}
           JIRA_SITE_URL: ${{ vars.JIRA_SITE_URL }}
           EXPECTED_SHARDS: ${{ inputs.browser == 'all' && '6' || '2' }}
           TARGET_ENV: ${{ inputs.target_environment || 'qa' }}
         run: python scripts/slack_ci_summary.py
+
+  allure-pages:
+    needs: ui-tests
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && vars.PUBLIC_ALLURE_ENABLED == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.target_environment == 'qa' && inputs.test_suite != 'defect_drill')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: allure-pages-publication
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.verify.outputs.report_url }}
+    outputs:
+      report_url: ${{ steps.verify.outputs.report_url }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: jira-result-*-attempt-${{ github.run_attempt }}
+          path: jira-results
+
+      - name: Prepare public Allure inputs
+        run: python scripts/public_allure.py
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Generate and store run report
+        run: |
+          set -euo pipefail
+          npm install --global allure-commandline@2.34.1
+          ref=refs/heads/allure-pages-history
+          existing=$(git ls-remote origin "$ref")
+          if [[ -n "$existing" ]]; then
+            git fetch origin "$ref"
+            git worktree add --detach archive FETCH_HEAD
+          else
+            git worktree add --detach archive HEAD
+            git -C archive switch --orphan allure-pages-history
+          fi
+          target="archive/site/runs/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
+          allure generate public-allure-results --clean --output "$target"
+          test -s "$target/index.html"
+          mkdir -p archive/site
+          printf '<!doctype html><title>QA Allure reports</title><p><a href="runs/%s/%s/">Open the most recently published report</a></p>\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > archive/site/index.html
+          git -C archive config user.name 'github-actions[bot]'
+          git -C archive config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C archive add site
+          if ! git -C archive diff --cached --quiet; then
+            git -C archive commit -m "Publish QA Allure report for run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
+          fi
+          git -C archive push origin "HEAD:$ref"
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: archive/site
+
+      - uses: actions/deploy-pages@v4
+        id: deploy
+
+      - name: Verify the hosted report
+        id: verify
+        env:
+          PAGES_URL: ${{ steps.deploy.outputs.page_url }}
+        run: |
+          report_url="${PAGES_URL%/}/runs/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT/"
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 15 --output /dev/null "$report_url"
+          echo "report_url=$report_url" >> "$GITHUB_OUTPUT"
