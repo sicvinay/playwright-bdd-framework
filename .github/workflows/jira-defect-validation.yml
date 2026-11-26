@@ -44,7 +44,7 @@ jobs:
           manifest = Path("jira-results/synthetic/jira-result.json")
           manifest.parent.mkdir(parents=True, exist_ok=True)
           failure = {"feature": "synthetic.feature", "scenario": "[INTEGRATION TEST] Synthetic Jira defect validation SCRUM-59",
-                     "step": "Then the synthetic assertion fails", "line": 1, "step_line": 2}
+                     "step": "Then the synthetic assertion fails after the Bug work type is enabled", "line": 1, "step_line": 2}
           identity = [failure[field] for field in ("feature", "scenario", "step")]
           label = "pw-regression-" + hashlib.sha256(json.dumps(identity).encode()).hexdigest()[:24]
           property_path = f"/issue/{issue}/properties/{label}"
