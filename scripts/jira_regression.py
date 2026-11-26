@@ -149,6 +149,13 @@ def file_defect(results_issue, candidate, failure, evidence, run_url):
             paragraph(f"Assertion step line: {failure['step_line']}"),
             link("GitHub Actions run and job logs", run_url),
         ]
+        if os.environ.get("JIRA_DEFECT_DRILL") == "true":
+            content.extend([
+                paragraph("Controlled integration drill. An intentionally incorrect expectation was used to validate automatic filing."),
+                paragraph("Steps: Open SauceDemo and submit the login form with an empty username and the demo password."),
+                paragraph("Expected by the drill: Epic sadface: Password is required"),
+                paragraph("Observed: Epic sadface: Username is required"),
+            ])
         if evidence:
             content.append(link("Evidence archive (Allure HTML, logs, screenshots, video and traces when captured)", evidence))
         created = jira("POST", "/issue", {"fields": {
@@ -184,7 +191,9 @@ def publish():
     environment = os.environ["TARGET_ENV"]
     event = os.environ["GITHUB_EVENT_NAME"]
     eligible = (
-        event == "schedule" and environment == "qa" and attempt == "1"
+        (event == "schedule" or (event == "workflow_dispatch" and issue == "SCRUM-59"
+         and os.environ.get("JIRA_DEFECT_DRILL") == "true"))
+        and environment == "qa" and attempt == "1"
         and os.environ.get("JIRA_DEFECTS_ENABLED") == "true"
     )
 
