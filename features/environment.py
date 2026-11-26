@@ -1,3 +1,5 @@
+import json
+import os
 from pathlib import Path
 import re
 from uuid import uuid4
@@ -76,3 +78,21 @@ def after_scenario(context, scenario):
                 context.browser.close()
             finally:
                 context.playwright.stop()
+
+
+def after_step(context, step):
+    """Record only explicit Then assertions as regression candidates."""
+    output = os.environ.get("CI_ASSERTIONS_FILE")
+    if not output or step.step_type != "then" or not isinstance(step.exception, AssertionError):
+        return
+
+    scenario = context.scenario
+    failure = {
+        "feature": Path(scenario.feature.filename).as_posix(),
+        "scenario": scenario.name,
+        "line": scenario.line,
+        "step": step.name,
+        "step_line": step.line,
+    }
+    with Path(output).open("a", encoding="utf-8") as manifest:
+        manifest.write(json.dumps(failure) + "\n")
