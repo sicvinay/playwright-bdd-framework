@@ -96,11 +96,15 @@ def collect():
         scenarios[entry.get("historyId") or entry.get("fullName") or path.stem] = {
             "name": entry.get("name", "Unnamed scenario"),
             "status": entry.get("status", "unknown"),
+            "message": entry.get("statusDetails", {}).get("message", "")[:600]
+            if os.environ.get("TEST_SUITE") == "defect_drill" else "",
             "start": entry.get("start"),
             "stop": entry.get("stop"),
         }
     result = {
         "scenarios": list(scenarios.values()),
+        "suite": os.environ.get("TEST_SUITE", ""),
+        "environment": os.environ.get("TARGET_ENV", ""),
         "retry": os.environ.get("RETRY_OUTCOME", "not run"),
         "browser": os.environ["BROWSER"],
         "shard": os.environ["SHARD_INDEX"],
@@ -258,8 +262,17 @@ def publish():
                 "object": {"url": report_url, "title": f"Open Allure report · Run {run} · Attempt {attempt}"},
             })
     if output := os.environ.get("GITHUB_OUTPUT"):
+        owners = {}
+        for key in sorted(bug_outcomes)[:4]:
+            try:
+                details = jira("GET", f"/issue/{key}?fields=assignee")
+                assignee = details.get("fields", {}).get("assignee")
+                owners[key] = assignee.get("displayName") if assignee else "Unassigned"
+            except RuntimeError:
+                continue
         with Path(output).open("a", encoding="utf-8") as stream:
             stream.write(f"bugs={json.dumps(bug_outcomes)}\n")
+            stream.write(f"owners={json.dumps(owners)}\n")
     if errors:
         raise RuntimeError("; ".join(dict.fromkeys(errors)))
 
