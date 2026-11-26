@@ -183,9 +183,9 @@ behave --tags=@login
 
 # Parallel Behave Execution in CI
 
-GitHub Actions distributes the top-level `.feature` files across **two parallel shards** using a deterministic sorted round-robin assignment. Each shard runs in a separate runner and produces its own Allure report, screenshots, videos, traces, and logs. Existing cross-browser `browser=all` expands to **six jobs** (3 browser engines × 2 shards). Daily 07:00 IST regression uses two Chromium shards.
+GitHub Actions distributes the top-level `.feature` files across **two parallel shards** using a deterministic sorted round-robin assignment. Each shard runs in a separate runner and produces its own Allure report, screenshots, videos, traces, and logs. Existing cross-browser `browser=all` expands to **six jobs** (3 browser engines × 2 shards). Daily 07:00 IST QA runs all three engines with two shards per engine.
 
-This is **feature-file-level parallelism**, not scenario-level parallelism: scenarios inside one feature still run sequentially. Shard durations can differ if feature files have unequal numbers of scenarios. The current two-feature suite gives one feature to each shard. The workflow avoids simultaneous writes to shared report directories by using isolated runners and unique artifact names. Do not expect a single combined Allure dashboard yet; each shard has its own report. No additional Python parallel-runner package is required.
+This is **feature-file-level parallelism**, not scenario-level parallelism: scenarios inside one feature still run sequentially. Shard durations can differ if feature files have unequal numbers of scenarios. The current two-feature suite gives one feature to each shard. The workflow avoids simultaneous writes to shared report directories by using isolated runners and unique artifact names. The workflow also combines the shard results into one Allure report for the run. No additional Python parallel-runner package is required.
 
 ---
 
@@ -193,13 +193,13 @@ This is **feature-file-level parallelism**, not scenario-level parallelism: scen
 
 The framework supports `BROWSER=chromium` (default), `BROWSER=firefox`, and `BROWSER=webkit`. Install all engines locally using `python -m playwright install chromium firefox webkit`. In PowerShell, select an engine with `$env:BROWSER="firefox"; behave --tags=@smoke` (replace firefox with chromium or webkit).
 
-For GitHub Actions, choose **Actions → UI Automation Tests → Run workflow**, select `browser=all` to run three separate browser jobs, and select the desired suite/environment. Each job publishes its own Allure and evidence artifact named `ui-automation-test-results-<browser>`. Pull requests, pushes, and daily 07:00 IST scheduled regression runs continue using Chromium by default. WebKit is Playwright's Safari engine, not the Safari desktop browser.
+For GitHub Actions, choose **Actions → UI Automation Tests → Run workflow**, select `browser=all` to run three separate browser jobs, and select the desired suite/environment. Each job publishes its own browser- and shard-specific evidence artifact. Pull requests and pushes default to Chromium. WebKit is Playwright's Safari engine, not the Safari desktop browser.
 
 ---
 
 # Scheduled Regression Runs
 
-GitHub Actions runs the `@regression` suite automatically every day at **07:00 IST (01:30 UTC)** against the QA SauceDemo environment. The workflow uses `cron: '30 1 * * *'`, so the schedule is UTC-based and does not shift for daylight saving time in India. Scheduled workflows run from the default branch and GitHub may delay their start during periods of high load.
+GitHub Actions runs all regular QA scenarios automatically every day at **07:00 IST (01:30 UTC)** against the QA SauceDemo environment. The workflow uses `cron: '30 1 * * *'`, so the schedule is UTC-based and does not shift for daylight saving time in India. Scheduled workflows run from the default branch and GitHub may delay their start during periods of high load.
 
 You can still run tests manually via **Actions → UI Automation Tests → Run workflow**. Pull requests continue to run smoke tests; normal pushes continue to run regression tests. The workflow serializes overlapping scheduled runs, generates Allure reports and uploads test artifacts. Slack notifications require a configured `SLACK_WEBHOOK_URL` secret.
 
@@ -208,6 +208,10 @@ You can still run tests manually via **Actions → UI Automation Tests → Run w
 # Allure Reporting
 
 The framework uses `allure-behave` to generate Allure test results.
+
+Each workflow attempt produces one Slack card with run totals and a breakdown by BDD tag. Scenarios with several tags appear under each tag and count once per browser in the run total. Scheduled runs execute the regular QA suite across all browsers and exclude `@wip` and `@defect_drill`. Manual runs can select one suite or `all`.
+
+For eligible QA runs, **Open Allure report** opens a hosted overview with outcomes and timing grouped by browser and job. Public reports use approved scenario titles and suite tags. **Download full evidence** links to a GitHub Actions artifact retained for 14 days. It includes a single-file Allure report with the raw test details and attachment data, plus the individual jobs' diagnostic files where captured. Jira receives the available links. If a job fails before producing results, use the job logs for setup diagnostics. A failed-jobs-only retry can show partial results because reports are scoped to the current attempt.
 
 ## Generate Allure Results
 

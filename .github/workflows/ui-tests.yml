@@ -139,7 +139,7 @@ jobs:
         run: |
           SUITE="$REQUESTED_SUITE"
           if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
-            SUITE="regression"
+            SUITE="all"
           elif [[ "$SUITE" == "auto" ]]; then
             if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then SUITE="smoke"; else SUITE="regression"; fi
           fi
@@ -231,7 +231,7 @@ jobs:
         id: upload_evidence
         uses: actions/upload-artifact@v4
         with:
-          name: ui-automation-test-results-${{ matrix.browser }}-shard-${{ matrix.shard }}
+          name: ui-automation-test-results-${{ matrix.browser }}-shard-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
           path: reports/
           retention-days: 14
           if-no-files-found: warn
@@ -255,8 +255,56 @@ jobs:
           path: jira-result.json
           retention-days: 14
 
+  allure-combined:
+    needs: ui-tests
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact_url: ${{ steps.upload.outputs.artifact-url }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ui-automation-test-results-*-attempt-${{ github.run_attempt }}
+          path: job-artifacts
+
+      - name: Combine raw Allure results and job evidence
+        id: combine
+        run: |
+          python scripts/merge_allure.py
+          if compgen -G 'consolidated/allure-results/*-result.json' > /dev/null; then
+            echo "has_results=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.combine.outputs.has_results == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Generate consolidated Allure report
+        if: steps.combine.outputs.has_results == 'true'
+        run: |
+          npm install --global allure-commandline@2.34.1
+          allure generate consolidated/allure-results --clean --single-file -o consolidated/allure-report
+
+      - name: Upload full run evidence
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: consolidated-allure-attempt-${{ github.run_attempt }}
+          path: consolidated/
+          retention-days: 14
+
   jira-report:
-    needs: [ui-tests, allure-pages]
+    needs: [ui-tests, allure-pages, allure-combined]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.JIRA_REPORTING_ENABLED == 'true' }}
     outputs:
       bugs: ${{ steps.publish.outputs.bugs }}
@@ -288,6 +336,7 @@ jobs:
           JIRA_RESULTS_ISSUE: ${{ inputs.test_suite == 'defect_drill' && 'SCRUM-59' || vars.JIRA_RESULTS_ISSUE }}
           JIRA_DEFECTS_ENABLED: ${{ vars.JIRA_DEFECTS_ENABLED }}
           ALLURE_REPORT_URL: ${{ needs.allure-pages.outputs.report_url }}
+          FULL_ALLURE_URL: ${{ needs.allure-combined.outputs.artifact_url }}
           JIRA_DEFECT_DRILL: ${{ inputs.test_suite == 'defect_drill' }}
           MATRIX_RESULT: ${{ needs.ui-tests.result }}
           EXPECTED_SHARDS: ${{ (github.event_name == 'schedule' || inputs.browser == 'all') && '6' || '2' }}
@@ -295,7 +344,7 @@ jobs:
         run: python scripts/jira_regression.py publish
 
   slack-summary:
-    needs: [ui-tests, jira-report, allure-pages]
+    needs: [ui-tests, jira-report, allure-pages, allure-combined]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -328,6 +377,7 @@ jobs:
           MATRIX_RESULT: ${{ needs.ui-tests.result }}
           JIRA_RESULT: ${{ needs.jira-report.result }}
           ALLURE_REPORT_URL: ${{ needs.allure-pages.outputs.report_url }}
+          FULL_ALLURE_URL: ${{ needs.allure-combined.outputs.artifact_url }}
           JIRA_BUGS: ${{ needs.jira-report.outputs.bugs }}
           JIRA_OWNERS: ${{ needs.jira-report.outputs.owners }}
           JIRA_RESULTS_ISSUE: ${{ vars.JIRA_RESULTS_ISSUE }}
@@ -338,7 +388,7 @@ jobs:
 
   allure-pages:
     needs: ui-tests
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && vars.PUBLIC_ALLURE_ENABLED == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.target_environment == 'qa' && inputs.test_suite != 'defect_drill')) }}
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && vars.PUBLIC_ALLURE_ENABLED == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.target_environment == 'qa')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
@@ -363,6 +413,8 @@ jobs:
           path: jira-results
 
       - name: Prepare public Allure inputs
+        env:
+          EXPECTED_SHARDS: ${{ (github.event_name == 'schedule' || inputs.browser == 'all') && '6' || '2' }}
         run: python scripts/public_allure.py
 
       - uses: actions/setup-java@v4
@@ -411,3 +463,4 @@ jobs:
           report_url="${PAGES_URL%/}/runs/$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT/"
           curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 15 --output /dev/null "$report_url"
           echo "report_url=$report_url" >> "$GITHUB_OUTPUT"
+
