@@ -219,12 +219,11 @@ def card(env, results, jobs, metadata=None, payload=None, baseline=None):
         actions.append(("Open Allure report", report_url))
     if not actions:
         actions.append(("View run summary", run_url))
-    evidence_rows = [failed_row] if failed_row else results
+    evidence_rows = [failed_row] if failed_row else results if len(results) == 1 else []
     evidence = next((row["evidence"] for row in evidence_rows
                      if row["evidence"].startswith(f"{run}/artifacts/")), None)
     if evidence:
-        label = "Download job evidence" if failed_row or len(results) == 1 else "Browse test evidence"
-        actions.append((label, evidence if failed_row or len(results) == 1 else run_url))
+        actions.append(("Download job evidence", evidence))
     site = env.get("JIRA_SITE_URL", "").rstrip("/")
     if re.fullmatch(r"https://[a-z0-9-]+\.atlassian\.net", site):
         key = next(iter(sorted(bugs)), None) or env.get("JIRA_RESULTS_ISSUE", "")
